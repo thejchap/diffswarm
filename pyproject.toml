@@ -1,0 +1,26 @@
+[project]
+name = "diffswarm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "Justin Chapman", email = "commonmodestudio@gmail.com" }]
+requires-python = ">=3.13"
+dependencies = ["fastapi[standard]==0.116", "python-ulid[pydantic]==3.0"]
+
+[project.scripts]
+invoke = "diffswarm.tools.invoke:invoke"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.2.0",
+    "pytest>=8.4.1",
+    "ruff>=0.12.5",
+]

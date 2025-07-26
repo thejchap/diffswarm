@@ -1,0 +1,26 @@
+[
+  {
+    "label": "invoke",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "module": "diffswarm.tools.invoke",
+    "python": ".venv/bin/python",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": {},
+    "args": ["create_diff"],
+    "jinja": true,
+    "justMyCode": true
+  },
+  {
+    "label": "server",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "module": "fastapi",
+    "python": ".venv/bin/python",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": {},
+    "args": ["dev"],
+    "jinja": true,
+    "justMyCode": true
+  }
+]
