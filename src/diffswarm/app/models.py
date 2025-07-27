@@ -107,109 +107,150 @@ class DiffBase(DiffSwarmBaseModel):
         return cls.parse_str(raw.decode())
 
     @classmethod
-    def parse_str(cls, raw: str) -> Self:  # noqa: PLR0912, PLR0915, C901
+    def parse_str(cls, raw: str) -> Self:
+        """Parse a unified diff string using recursive descent parsing."""
         lines = raw.strip().split("\n")
-        from_file_line = None
-        to_file_line = None
-        from_filename = None
-        to_filename = None
-        from_timestamp = None
-        to_timestamp = None
-        hunks: list[Hunk] = []
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            if line.startswith("--- "):
-                from_file_line = line
-                parts = line[4:].split("\t", 1)
-                from_filename = parts[0]
-                from_timestamp = (
-                    dateutil_parser.parse(parts[1]) if len(parts) > 1 else None
-                )
-            elif line.startswith("+++ "):
-                to_file_line = line
-                parts = line[4:].split("\t", 1)
-                to_filename = parts[0]
-                to_timestamp = (
-                    dateutil_parser.parse(parts[1]) if len(parts) > 1 else None
-                )
-            elif line.startswith("@@ "):
-                if not from_file_line or not to_file_line:
-                    msg = "Hunk found before file headers"
-                    raise ValueError(msg)
-                hunk_match = line.split(" ")
-                hunk_match_length = 3
-                if len(hunk_match) < hunk_match_length:
-                    msg = f"Invalid hunk header: {line}"
-                    raise ValueError(msg)
-                from_range = hunk_match[1][1:]
-                to_range = hunk_match[2][1:]
-                from_start, from_count = ([*from_range.split(","), "1"])[:2]
-                to_start, to_count = ([*to_range.split(","), "1"])[:2]
-                try:
-                    from_start = int(from_start)
-                    from_count = int(from_count)
-                    to_start = int(to_start)
-                    to_count = int(to_count)
-                except ValueError as err:
-                    msg = f"Invalid line numbers in hunk header: {line}"
-                    raise ValueError(msg) from err
-                hunk_lines: list[Line] = []
-                i += 1
-                while i < len(lines) and not lines[i].startswith("@@"):
-                    hunk_line = lines[i]
-                    if hunk_line.startswith(" "):
-                        hunk_lines.append(
-                            Line(
-                                type=LineType.CONTEXT,
-                                content=hunk_line[1:],
-                            )
-                        )
-                    elif hunk_line.startswith("-"):
-                        hunk_lines.append(
-                            Line(
-                                type=LineType.DELETE,
-                                content=hunk_line[1:],
-                            )
-                        )
-                    elif hunk_line.startswith("+"):
-                        hunk_lines.append(
-                            Line(
-                                type=LineType.ADD,
-                                content=hunk_line[1:],
-                            )
-                        )
-                    else:
-                        hunk_lines.append(
-                            Line(
-                                type=LineType.CONTEXT,
-                                content=hunk_line,
-                            )
-                        )
-                    i += 1
+        parser = UnifiedDiffParser(lines)
+        return cls.model_validate(parser.parse_diff(raw))
 
-                hunks.append(
-                    Hunk(
-                        from_start=from_start,
-                        from_count=from_count,
-                        to_start=to_start,
-                        to_count=to_count,
-                        lines=hunk_lines,
-                    )
-                )
-                continue
-            i += 1
-        if not from_file_line or not to_file_line:
-            msg = "Missing file headers (--- and +++)"
+
+class UnifiedDiffParser:
+    def __init__(self, lines: list[str]) -> None:
+        self.lines = lines
+        self.pos = 0
+
+    @property
+    def current_line(self) -> str | None:
+        return self.lines[self.pos] if self.pos < len(self.lines) else None
+
+    def advance(self) -> None:
+        self.pos += 1
+
+    def parse_diff(self, raw: str) -> DiffBase:
+        from_info = self._parse_from_header()
+        to_info = self._parse_to_header()
+        hunks = self._parse_hunks()
+        if not hunks:
+            msg = "No hunks found in diff"
             raise ValueError(msg)
-        return cls(
+        return DiffBase(
             raw=raw,
-            from_filename=from_filename or "",
-            to_filename=to_filename or "",
-            from_timestamp=from_timestamp,
-            to_timestamp=to_timestamp,
+            from_filename=from_info["filename"],
+            from_timestamp=from_info["timestamp"],
+            to_filename=to_info["filename"],
+            to_timestamp=to_info["timestamp"],
             hunks=hunks,
         )
+
+    def _parse_from_header(self) -> dict[str, Any]:
+        """Parse '--- filename [timestamp]' header."""
+        while self.current_line and not self.current_line.startswith("--- "):
+            self.advance()
+
+        if not self.current_line or not self.current_line.startswith("--- "):
+            msg = "Missing '---' header"
+            raise ValueError(msg)
+
+        return self._parse_file_header(self.current_line, "---")
+
+    def _parse_to_header(self) -> dict[str, Any]:
+        """Parse '+++ filename [timestamp]' header."""
+        self.advance()  # Move past from header
+
+        if not self.current_line or not self.current_line.startswith("+++ "):
+            msg = "Missing '+++' header"
+            raise ValueError(msg)
+
+        return self._parse_file_header(self.current_line, "+++")
+
+    def _parse_file_header(self, line: str, prefix: str) -> dict[str, Any]:
+        """Parse file header line extracting filename and optional timestamp."""
+        content = line[len(prefix) + 1 :]  # Remove prefix and space
+        parts = content.split("\t", 1)
+        filename = parts[0]
+        timestamp = None
+
+        if len(parts) > 1:
+            try:
+                timestamp = dateutil_parser.parse(parts[1])
+            except (ValueError, TypeError):
+                timestamp = None
+
+        return {"filename": filename, "timestamp": timestamp}
+
+    def _parse_hunks(self) -> list[Hunk]:
+        """Parse all hunks in the diff."""
+        hunks: list[Hunk] = []
+        self.advance()
+        while self.current_line:
+            if self.current_line.startswith("@@ "):
+                hunks.append(self._parse_hunk())
+            else:
+                self.advance()
+        return hunks
+
+    def _parse_hunk(self) -> Hunk:
+        """Parse single hunk: header + lines."""
+        if not self.current_line:
+            msg = "Expected hunk header, but reached end of input"
+            raise ValueError(msg)
+        header = self._parse_hunk_header(self.current_line)
+        self.advance()  # Move past hunk header
+        lines = self._parse_hunk_lines()
+        return Hunk(
+            from_start=header["from_start"],
+            from_count=header["from_count"],
+            to_start=header["to_start"],
+            to_count=header["to_count"],
+            lines=lines,
+        )
+
+    def _parse_hunk_header(self, line: str) -> dict[str, int]:
+        """Parse '@@ -from_range +to_range @@' header."""
+        parts = line.split(" ")
+        min_parts = 3
+        if len(parts) < min_parts:
+            msg = f"Invalid hunk header: {line}"
+            raise ValueError(msg)
+        from_range = parts[1][1:]  # Remove '-' prefix
+        to_range = parts[2][1:]  # Remove '+' prefix
+        try:
+            from_start, from_count = self._parse_range(from_range)
+            to_start, to_count = self._parse_range(to_range)
+        except ValueError as err:
+            msg = f"Invalid line numbers in hunk header: {line}"
+            raise ValueError(msg) from err
+        return {
+            "from_start": from_start,
+            "from_count": from_count,
+            "to_start": to_start,
+            "to_count": to_count,
+        }
+
+    def _parse_range(self, range_str: str) -> tuple[int, int]:
+        """Parse range like '1' or '1,3' returning (start, count)."""
+        parts = range_str.split(",")
+        start = int(parts[0])
+        count = int(parts[1]) if len(parts) > 1 else 1
+        return start, count
+
+    def _parse_hunk_lines(self) -> list[Line]:
+        """Parse lines within a hunk until next hunk or end."""
+        lines: list[Line] = []
+        while self.current_line and not self.current_line.startswith("@@"):
+            lines.append(self._parse_hunk_line(self.current_line))
+            self.advance()
+        return lines
+
+    def _parse_hunk_line(self, line: str) -> Line:
+        """Parse single line within hunk based on prefix."""
+        if line.startswith(" "):
+            return Line(type=LineType.CONTEXT, content=line[1:])
+        if line.startswith("-"):
+            return Line(type=LineType.DELETE, content=line[1:])
+        if line.startswith("+"):
+            return Line(type=LineType.ADD, content=line[1:])
+        return Line(type=LineType.CONTEXT, content=line)
 
 
 class Diff(DiffBase):

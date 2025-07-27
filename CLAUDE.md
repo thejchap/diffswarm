@@ -12,10 +12,21 @@ It uses:
 
 ## Architecture
 
-- **Entry Points**: The application can be run via `python -m diffswarm` or the `diffswarm` command (installed via project scripts)
-- **Main Application**: `src/diffswarm/app.py` contains the FastAPI application instance (`APP`)
-- **Runner**: `src/diffswarm/__init__.py` provides the `run()` function that starts the uvicorn server
-- **Module Entry**: `src/diffswarm/__main__.py` enables `python -m diffswarm` execution
+DiffSwarm is structured as a diff parsing and storage service with a FastAPI web interface.
+
+### Core Components
+- **FastAPI App**: `src/diffswarm/app/app.py` contains the main FastAPI application (`APP`) with database lifecycle management
+- **Models**: `src/diffswarm/app/models.py` defines Pydantic models for diff parsing including `DiffBase`, `Hunk`, and `Line` types
+- **Database**: `src/diffswarm/app/database.py` handles SQLAlchemy setup with SQLite backend and `DBDiff` table model
+- **Router**: `src/diffswarm/app/routers/pages.py` contains API endpoints
+- **Settings**: `src/diffswarm/app/settings.py` manages configuration via pydantic-settings
+
+### Entry Points
+- **Direct execution**: `uv run fastapi dev` (development mode)
+- **Invoke tool**: `uv run invoke <route_name>` - CLI tool for testing API endpoints with example data
+
+### Data Flow
+The application parses unified diff format strings into structured models, validates line counts in hunks, and stores them in SQLite via SQLAlchemy ORM.
 
 ## Development Commands
 
@@ -26,8 +37,8 @@ uv sync  # Install dependencies and create virtual environment
 
 ### Running the Application
 ```bash
-uv run fastapi dev src/diffswarm # Run via uv (development)
-uv run diffswarm # Run via uv (production)
+uv run fastapi dev src/diffswarm        # Development server with hot reload
+uv run invoke <route_name>               # Test specific API endpoint (e.g., "create_diff")
 ```
 
 ### Development Tools
@@ -35,6 +46,7 @@ uv run diffswarm # Run via uv (production)
 uv run ruff check       # Lint code
 uv run ruff format      # Format code
 uv run pytest           # Run tests
+uv run basedpyright     # Run basedpyright (type checker)
 ```
 
 ### Package Management
@@ -45,19 +57,23 @@ uv remove <package>     # Remove dependency
 uv lock                 # Update lockfile
 ```
 
-## Project Structure
+## Type Checking & Code Quality
 
-- `src/diffswarm/` - Main package directory
-- `__init__.py` - Contains `run()` function for starting the server
-- `__main__.py` - Module entry point
-- `app.py` - FastAPI application definition
-- `pyproject.toml` - Project configuration and dependencies
-- `uv.lock` - Dependency lockfile
+- **Type Checker**: Pyright with strict mode enabled (`.venv` virtual environment)
+- **Linter**: Ruff with comprehensive rule set ("ALL" selected with specific ignores)
+- **Formatter**: Ruff (88 character line length)
+- **Testing**: pytest with doctest integration enabled
 
-## Type Checking
+## Key Features
 
-The project is configured to use Pyright with the virtual environment located at `./.venv`.
+- **Diff Parsing**: Parses unified diff format with validation of line counts in hunks
+- **Data Models**: Strong typing with Pydantic models and enum-based line types
+- **Database**: SQLite storage via SQLAlchemy ORM with automatic table creation
+- **Testing Tool**: Built-in `invoke` command for endpoint testing with example data
 
-## Notes
-- Look up answers in the FastAPI documentation where relevant for extra certainty
-- Use doctests to verify code examples in documentation
+# Development Notes
+- After all changes, run the following to ensure correct functionality and code quality:
+  - `uv run basedpyright`
+  - `uv run ruff check --fix`
+  - `uv run ruff format`
+  - `uv run pytest`
