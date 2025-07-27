@@ -53,3 +53,5 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+
+diffswarm-*.sqlite3

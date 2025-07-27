@@ -1,20 +1,22 @@
-"""
-shared, non-api-endpoint-specific models
-"""
+"""Shared, non-api-endpoint-specific models."""
 
+from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
+from dateutil import parser as dateutil_parser
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationInfo,
     field_validator,
 )
+from ulid import ULID
 
 
 class DiffSwarmBaseModel(BaseModel):
-    model_config = ConfigDict(
+    model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="forbid",
         populate_by_name=True,
     )
@@ -40,7 +42,7 @@ class Hunk(DiffSwarmBaseModel):
 
     @field_validator("lines")
     @classmethod
-    def validate_line_counts(cls, v, info):
+    def validate_line_counts(cls, v: Any, info: ValidationInfo) -> Any:  # noqa: ANN401
         if "from_count" not in info.data or "to_count" not in info.data:
             return v
         from_count = info.data["from_count"]
@@ -48,20 +50,19 @@ class Hunk(DiffSwarmBaseModel):
         delete_count = sum(1 for line in v if line.type == LineType.DELETE)
         add_count = sum(1 for line in v if line.type == LineType.ADD)
         context_count = sum(1 for line in v if line.type == LineType.CONTEXT)
-        if from_count != delete_count + context_count:
-            raise ValueError(
-                f"Hunk line count mismatch: expected {from_count} from-lines, got {delete_count + context_count}"
-            )
+        del_context_count = delete_count + context_count
+        if from_count != del_context_count:
+            msg = f"Expected {from_count} from-lines, got {del_context_count}"
+            raise ValueError(msg)
         if to_count != add_count + context_count:
-            raise ValueError(
-                f"Hunk line count mismatch: expected {to_count} to-lines, got {add_count + context_count}"
-            )
+            msg = f"Expected {to_count} to-lines, got {add_count + context_count}"
+            raise ValueError(msg)
         return v
 
 
-class Diff(DiffSwarmBaseModel):
+class DiffBase(DiffSwarmBaseModel):
     """
-    # Diff
+    A structured representation of a diff.
 
     # References
     - https://www.gnu.org/software/diffutils/manual/html_node/Unified-Format.html
@@ -69,7 +70,15 @@ class Diff(DiffSwarmBaseModel):
     - https://www.gnu.org/software/diffutils/manual/html_node/Detailed-Unified.html
 
     # Examples
-    >>> diff = Diff.parse(Diff.HELLO_WORLD)
+    >>> diff = DiffBase.parse_str(DiffBase.HELLO_WORLD)
+    >>> diff.from_filename
+    '/dev/fd/14'
+    >>> diff.to_filename
+    '/dev/fd/16'
+    >>> diff.from_timestamp.isoformat()
+    '2025-07-26T17:33:15'
+    >>> diff.to_timestamp.isoformat()
+    '2025-07-26T17:33:15'
     >>> len(diff.hunks)
     1
     >>> len(diff.hunks[0].lines)
@@ -78,7 +87,7 @@ class Diff(DiffSwarmBaseModel):
     Line(type=<LineType.ADD: 'ADD'>, content='world')
     """
 
-    HELLO_WORLD: ClassVar = """\
+    HELLO_WORLD: ClassVar[str] = """\
 --- /dev/fd/14	2025-07-26 17:33:15
 +++ /dev/fd/16	2025-07-26 17:33:15
 @@ -1 +1,2 @@
@@ -88,15 +97,17 @@ class Diff(DiffSwarmBaseModel):
 
     raw: str = Field(..., examples=[HELLO_WORLD], min_length=1)
     from_filename: str = Field(..., min_length=1)
-    from_timestamp: str | None = None
+    from_timestamp: datetime | None = None
     to_filename: str = Field(..., min_length=1)
-    to_timestamp: str | None = None
+    to_timestamp: datetime | None = None
     hunks: list[Hunk] = Field(..., min_length=1)
 
     @classmethod
-    def parse(cls, raw: str | bytes) -> Self:
-        if isinstance(raw, bytes):
-            raw = raw.decode()
+    def parse_bytes(cls, raw: bytes) -> Self:
+        return cls.parse_str(raw.decode())
+
+    @classmethod
+    def parse_str(cls, raw: str) -> Self:  # noqa: PLR0912, PLR0915, C901
         lines = raw.strip().split("\n")
         from_file_line = None
         to_file_line = None
@@ -104,7 +115,7 @@ class Diff(DiffSwarmBaseModel):
         to_filename = None
         from_timestamp = None
         to_timestamp = None
-        hunks = []
+        hunks: list[Hunk] = []
         i = 0
         while i < len(lines):
             line = lines[i]
@@ -112,30 +123,38 @@ class Diff(DiffSwarmBaseModel):
                 from_file_line = line
                 parts = line[4:].split("\t", 1)
                 from_filename = parts[0]
-                from_timestamp = parts[1] if len(parts) > 1 else None
+                from_timestamp = (
+                    dateutil_parser.parse(parts[1]) if len(parts) > 1 else None
+                )
             elif line.startswith("+++ "):
                 to_file_line = line
                 parts = line[4:].split("\t", 1)
                 to_filename = parts[0]
-                to_timestamp = parts[1] if len(parts) > 1 else None
+                to_timestamp = (
+                    dateutil_parser.parse(parts[1]) if len(parts) > 1 else None
+                )
             elif line.startswith("@@ "):
                 if not from_file_line or not to_file_line:
-                    raise ValueError("Hunk found before file headers")
+                    msg = "Hunk found before file headers"
+                    raise ValueError(msg)
                 hunk_match = line.split(" ")
-                if len(hunk_match) < 3:
-                    raise ValueError(f"Invalid hunk header: {line}")
+                hunk_match_length = 3
+                if len(hunk_match) < hunk_match_length:
+                    msg = f"Invalid hunk header: {line}"
+                    raise ValueError(msg)
                 from_range = hunk_match[1][1:]
                 to_range = hunk_match[2][1:]
-                from_start, from_count = (from_range.split(",") + ["1"])[:2]
-                to_start, to_count = (to_range.split(",") + ["1"])[:2]
+                from_start, from_count = ([*from_range.split(","), "1"])[:2]
+                to_start, to_count = ([*to_range.split(","), "1"])[:2]
                 try:
                     from_start = int(from_start)
                     from_count = int(from_count)
                     to_start = int(to_start)
                     to_count = int(to_count)
-                except ValueError:
-                    raise ValueError(f"Invalid line numbers in hunk header: {line}")
-                hunk_lines = []
+                except ValueError as err:
+                    msg = f"Invalid line numbers in hunk header: {line}"
+                    raise ValueError(msg) from err
+                hunk_lines: list[Line] = []
                 i += 1
                 while i < len(lines) and not lines[i].startswith("@@"):
                     hunk_line = lines[i]
@@ -181,7 +200,8 @@ class Diff(DiffSwarmBaseModel):
                 continue
             i += 1
         if not from_file_line or not to_file_line:
-            raise ValueError("Missing file headers (--- and +++)")
+            msg = "Missing file headers (--- and +++)"
+            raise ValueError(msg)
         return cls(
             raw=raw,
             from_filename=from_filename or "",
@@ -190,3 +210,8 @@ class Diff(DiffSwarmBaseModel):
             to_timestamp=to_timestamp,
             hunks=hunks,
         )
+
+
+class Diff(DiffBase):
+    model_config = ConfigDict(from_attributes=True)
+    id_: ULID = Field(..., alias="id")

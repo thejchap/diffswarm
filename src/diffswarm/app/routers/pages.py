@@ -5,19 +5,23 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BeforeValidator
 from ulid import ULID
 
-from diffswarm.app.models import Diff
+from diffswarm.app.database import DBDiff
+from diffswarm.app.dependencies import SessionDependency
+from diffswarm.app.models import Diff, DiffBase
 
 ROUTER = APIRouter()
 
 
 @ROUTER.get("/", response_class=PlainTextResponse)
-def home():
+def home() -> str:
     return "diffswarm"
 
 
 @ROUTER.get("/diffs/{diff_id}", response_class=PlainTextResponse)
-def get_diff(diff_id: ULID):
-    return f"diffswarm {diff_id}"
+def get_diff(diff_id: ULID, session: SessionDependency) -> str:
+    db_diff = session.get_one(DBDiff, ident=str(diff_id))
+    diff = Diff.model_validate(db_diff)
+    return f"diffswarm {diff.id_}"
 
 
 @ROUTER.post(
@@ -29,16 +33,21 @@ Create a new diff from a unified diff string
 # Example
 ```sh
 diff <(echo "hello") <(echo "hello\nworld") -u | \
-curl  --header 'Content-Type: text/plain'  -X POST --data-binary @- localhost:8000
+curl --header 'Content-Type: text/plain' -X POST --data-binary @- localhost:8000
 ```
 """.strip(),
 )
 def create_diff(
     req: Request,
     body: Annotated[
-        Diff,
-        BeforeValidator(Diff.parse, json_schema_input_type=str),
-        Body(examples=[Diff.HELLO_WORLD], media_type="text/plain"),
+        DiffBase,
+        BeforeValidator(DiffBase.parse_bytes, json_schema_input_type=str),
+        Body(examples=[DiffBase.HELLO_WORLD], media_type="text/plain"),
     ],
-):
-    return f"{req.url_for('get_diff', diff_id=ULID())}\n"
+    session: SessionDependency,
+) -> str:
+    db_diff = DBDiff(id=str(ULID()), raw=body.raw)
+    session.add(db_diff)
+    session.commit()
+    session.refresh(db_diff)
+    return f"{req.url_for('get_diff', diff_id=db_diff.id)}\n"
