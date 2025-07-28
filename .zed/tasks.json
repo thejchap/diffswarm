@@ -1,7 +1,17 @@
 [
   {
-    "label": "pytest",
+    "label": "test",
     "command": "uv run pytest",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never",
+    "shell": "system"
+  },
+  {
+    "label": "server",
+    "command": "uv run fastapi dev",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,

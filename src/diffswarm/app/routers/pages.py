@@ -1,13 +1,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BeforeValidator
 from ulid import ULID
 
 from diffswarm.app.database import DBDiff
 from diffswarm.app.dependencies import SessionDependency
 from diffswarm.app.models import Diff, DiffBase
+from diffswarm.app.templates import TEMPLATES
 
 ROUTER = APIRouter()
 
@@ -17,11 +18,18 @@ def home() -> str:
     return "diffswarm"
 
 
-@ROUTER.get("/diffs/{diff_id}", response_class=PlainTextResponse)
-def get_diff(diff_id: ULID, session: SessionDependency) -> str:
-    db_diff = session.get_one(DBDiff, ident=str(diff_id))
-    diff = Diff.model_validate(db_diff)
-    return f"diffswarm {diff.id_}"
+@ROUTER.get("/diffs/{diff_id}", response_class=HTMLResponse)
+def get_diff(
+    request: Request,
+    diff_id: ULID,
+    session: SessionDependency,
+) -> HTMLResponse:
+    diff = Diff.model_validate(
+        session.query(DBDiff.id, DBDiff.raw).filter(DBDiff.id == str(diff_id)).one()
+    )
+    return TEMPLATES.TemplateResponse(
+        request=request, name="diff.jinja2", context={"diff": diff}
+    )
 
 
 @ROUTER.post(

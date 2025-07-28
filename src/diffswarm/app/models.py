@@ -253,6 +253,7 @@ class UnifiedDiffParser:
         return Line(type=LineType.CONTEXT, content=line)
 
 
-class Diff(DiffBase):
+class Diff(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
     id_: ULID = Field(..., alias="id")
+    raw: str

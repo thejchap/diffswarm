@@ -80,6 +80,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "jinja2" },
     { name = "pydantic-settings" },
     { name = "python-dateutil" },
     { name = "python-ulid", extra = ["pydantic"] },
@@ -97,6 +98,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = "==0.116" },
+    { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },
     { name = "python-ulid", extras = ["pydantic"], specifier = "==3.0" },

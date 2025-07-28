@@ -1,8 +1,10 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Never
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
 from .database import ENGINE, Base
@@ -17,6 +19,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 APP = FastAPI(lifespan=lifespan)
 APP.include_router(PAGES)
+APP.mount(
+    "/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static"
+)
 
 
 @APP.exception_handler(NoResultFound)
