@@ -21,7 +21,12 @@
     </head>
     <body class="h-full">
         <div id="app"></div>
+  {% raw %}
         <template id="app-template">
+        <button @click="test">test</button>
+    <span class="text-white">
+      {{reactiveArray}}
+    </span>
             <Test> </Test>
         </template>
         <template id="my-template-element">
@@ -808,5 +813,6 @@
                 </ul>
             </aside>
         </template>
+  {% endraw %}
     </body>
 </html>

@@ -17,7 +17,7 @@ from ulid import ULID
 
 from .database import ENGINE, Base
 from .routers import PAGES
-from .y import YWebSocketManager
+from .y import YWebSocketServer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     yield
 
 
-MANAGER = YWebSocketManager()
+Y_WEBSOCKET_SERVER = YWebSocketServer()
 APP = FastAPI(lifespan=lifespan)
 APP.include_router(PAGES)
 APP.mount(
@@ -41,7 +41,7 @@ APP.mount(
 
 @APP.websocket("/ws/{diff_id}")
 async def websocket_endpoint(websocket: WebSocket, diff_id: ULID) -> None:
-    await MANAGER.async_serve(str(diff_id), websocket)
+    await Y_WEBSOCKET_SERVER.async_serve(str(diff_id), websocket)
 
 
 @APP.exception_handler(NoResultFound)

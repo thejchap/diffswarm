@@ -19,21 +19,23 @@ const App = {
       diffId,
       doc,
     );
-    const yarray = doc.getArray("my-array");
-    yarray.observe((event) => {
-      console.log("yarray was modified");
-    });
-    wsProvider.on("status", (event) => {
-      console.log(event.status); // logs "connected" or "disconnected"
-      yarray.insert(0, ["val", "123", "456"]); // => "yarray was modified"
-    });
-    // every time a local or remote client modifies yarray, the observer is called
+    const reactiveArray = ref([]);
+    const arr = doc.getArray("my-array");
+    arr.observe((evt) => reactiveArray.value = arr.toArray())
     const message = ref("Hello Vue!");
     return {
       message,
+      doc,
+      reactiveArray,
     };
   },
   template: "#app-template",
+  methods: {
+    test() {
+      const yarray = this.doc.getArray("my-array");
+      yarray.push([1])
+    }
+  }
 };
 
 createApp(App).mount("#app");
