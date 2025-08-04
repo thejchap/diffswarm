@@ -1,0 +1,13 @@
+{
+  "name": "diffswarm",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/vue": "2.0.0",
+    "prettier": "3.6.2",
+    "yjs-types": "0.0.1"
+  },
+  "peerDependencies": {
+    "typescript": "5"
+  }
+}

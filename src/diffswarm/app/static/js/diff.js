@@ -14,14 +14,10 @@ const App = {
   setup() {
     const diffId = document.querySelector("meta[name='diff-id']").content;
     const doc = new Y.Doc();
-    const wsProvider = new WebsocketProvider(
-      "ws://localhost:8000/ws",
-      diffId,
-      doc,
-    );
+    new WebsocketProvider("ws://localhost:8000/ws", diffId, doc);
     const reactiveArray = ref([]);
     const arr = doc.getArray("my-array");
-    arr.observe((evt) => reactiveArray.value = arr.toArray())
+    arr.observe((evt) => (reactiveArray.value = arr.toArray()));
     const message = ref("Hello Vue!");
     return {
       message,
@@ -33,9 +29,9 @@ const App = {
   methods: {
     test() {
       const yarray = this.doc.getArray("my-array");
-      yarray.push([1])
-    }
-  }
+      yarray.push([1]);
+    },
+  },
 };
 
 createApp(App).mount("#app");

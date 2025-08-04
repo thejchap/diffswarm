@@ -13,3 +13,12 @@ repos:
     rev: v1.13.0
     hooks:
       - id: basedpyright
+  - repo: https://github.com/JoC0de/pre-commit-prettier
+    rev: v3.6.2
+    hooks:
+      - id: prettier
+  - repo: https://github.com/mohsentaleb/precommit-tsc
+    rev: "v1.0.0"
+    hooks:
+      - id: tsc
+        types_or: [javascript, ts, jsx, tsx]
