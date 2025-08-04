@@ -8,16 +8,13 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Request,
-    WebSocket,
     status,
 )
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
-from ulid import ULID
 
 from .database import ENGINE, Base
-from .routers import PAGES
-from .y import YWebSocketServer
+from .routers import PAGES, WEBSOCKETS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,19 +26,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     yield
 
 
-Y_WEBSOCKET_SERVER = YWebSocketServer()
 APP = FastAPI(lifespan=lifespan)
 APP.include_router(PAGES)
+APP.include_router(WEBSOCKETS)
 APP.mount(
     "/static",
     StaticFiles(directory=Path(__file__).parent / "static"),
     name="static",
 )
-
-
-@APP.websocket("/ws/{diff_id}")
-async def websocket_endpoint(websocket: WebSocket, diff_id: ULID) -> None:
-    await Y_WEBSOCKET_SERVER.async_serve(str(diff_id), websocket)
 
 
 @APP.exception_handler(NoResultFound)

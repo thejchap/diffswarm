@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import assert_never
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pycrdt import (
     Array,
     Doc,
@@ -14,11 +14,13 @@ from pycrdt import (
     create_update_message,  # pyright: ignore[reportUnknownVariableType]
     handle_sync_message,  # pyright: ignore[reportUnknownVariableType]
 )
+from ulid import ULID
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+ROUTER = APIRouter()
 DiffDoc = Doc[Array[int]]
 
 
@@ -182,3 +184,11 @@ class YWebSocketServer:
             if diff_id in self.rooms and not self.rooms[diff_id].clients:
                 logger.info("removing empty room: %s", diff_id)
                 del self.rooms[diff_id]
+
+
+Y_WEBSOCKET_SERVER = YWebSocketServer()
+
+
+@ROUTER.websocket("/ws/y/{diff_id}")
+async def async_websocket_endpoint(websocket: WebSocket, diff_id: ULID) -> None:
+    await Y_WEBSOCKET_SERVER.async_serve(str(diff_id), websocket)

@@ -17,8 +17,11 @@ repos:
     rev: v3.6.2
     hooks:
       - id: prettier
-  - repo: https://github.com/mohsentaleb/precommit-tsc
-    rev: "v1.0.0"
+  - repo: local
     hooks:
       - id: tsc
-        types_or: [javascript, ts, jsx, tsx]
+        name: tsc
+        entry: bun run tsc
+        language: system
+        types: [javascript, ts, tsx, jsx]
+        pass_filenames: false
