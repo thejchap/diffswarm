@@ -17,7 +17,7 @@ const App = {
     new WebsocketProvider("ws://localhost:8000/ws", diffId, doc);
     const reactiveArray = ref([]);
     const arr = doc.getArray("my-array");
-    arr.observe((evt) => (reactiveArray.value = arr.toArray()));
+    arr.observe(() => (reactiveArray.value = arr.toArray()));
     const message = ref("Hello Vue!");
     return {
       message,
