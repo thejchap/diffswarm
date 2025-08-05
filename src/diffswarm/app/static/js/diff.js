@@ -1,6 +1,4 @@
-import { createApp, inject, ref } from "vue";
-import * as Y from "yjs";
-import { WebsocketProvider } from "y-websocket";
+import { createApp, ref } from "vue";
 
 const Test = {
   template: "#my-template-element",
@@ -22,15 +20,7 @@ const App = {
     Hunk,
   },
   setup() {
-    const diffId = inject("diffId");
-    const yWebsocketEndpoint = inject("yWebsocketEndpoint");
-    const doc = new Y.Doc();
-    new WebsocketProvider(yWebsocketEndpoint, diffId, doc);
-    const reactiveArray = ref([]);
-    const arr = doc.getArray("my-array");
-    arr.observe(() => (reactiveArray.value = arr.toArray()));
     const message = ref("Hello Vue!");
-
     const hunks = ref([
       {
         filename: "src/components/Button.vue",
@@ -54,8 +44,6 @@ const App = {
 
     return {
       message,
-      doc,
-      reactiveArray,
       hunks,
     };
   },
@@ -73,10 +61,5 @@ const App = {
  */
 
 const $APP = document.getElementById("app");
-const { diffId: DIFF_ID, yWebsocketEndpoint: Y_WEBSOCKET_ENDPOINT } =
-  $APP.dataset;
-
-createApp(App)
-  .provide("diffId", DIFF_ID)
-  .provide("yWebsocketEndpoint", Y_WEBSOCKET_ENDPOINT)
-  .mount($APP);
+const { diffId: DIFF_ID } = $APP.dataset;
+createApp(App).provide("diffId", DIFF_ID).mount($APP);
