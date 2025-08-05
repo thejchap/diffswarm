@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
 from .database import ENGINE, Base
-from .routers import PAGES, WEBSOCKETS
+from .routers import PAGES
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,7 +28,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 APP = FastAPI(lifespan=lifespan)
 APP.include_router(PAGES)
-APP.include_router(WEBSOCKETS)
 APP.mount(
     "/static",
     StaticFiles(directory=Path(__file__).parent / "static"),
