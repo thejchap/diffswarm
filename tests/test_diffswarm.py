@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from starlette.status import HTTP_200_OK
 
 from diffswarm.app import APP
 from diffswarm.app.database import Base, get_session
@@ -29,10 +30,11 @@ def client_fixture(session: Session) -> Generator[TestClient]:
     APP.dependency_overrides.clear()
 
 
-def test_is_ok() -> None:
-    assert True
-
-
-def test_stuff(client: TestClient) -> None:
+def test_home(client: TestClient) -> None:
     res = client.get("/")
-    assert res
+    assert res.text == "diffswarm"
+
+
+def test_get_diff(client: TestClient) -> None:
+    res = client.get("/api/diffs/12345")
+    assert res.status_code == HTTP_200_OK
