@@ -17,7 +17,7 @@ from .database import ENGINE, Base
 from .routers import API, PAGES
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -42,5 +42,6 @@ def no_result_found_handler(_request: Request, _exc: NoResultFound) -> Never:
 
 
 @APP.exception_handler(SQLAlchemyError)
-def sql_alchemy_error_handler(_request: Request, _exc: SQLAlchemyError) -> Never:
+def sql_alchemy_error_handler(_request: Request, exc: SQLAlchemyError) -> Never:
+    LOGGER.error("SQLAlchemyError", exc_info=exc)
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)

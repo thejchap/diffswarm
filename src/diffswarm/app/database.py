@@ -8,7 +8,7 @@ database utils/models.
 
 from collections.abc import Generator
 
-from sqlalchemy import String, Text, create_engine
+from sqlalchemy import StaticPool, String, Text, create_engine
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -19,7 +19,14 @@ from sqlalchemy.orm import (
 
 from .settings import get_settings
 
-ENGINE = create_engine(url=get_settings().database_url, echo=True)
+SETTINGS = get_settings()
+# https://docs.sqlalchemy.org/en/20/dialects/sqlite.html#using-a-memory-database-in-multiple-threads
+ENGINE = create_engine(
+    url=SETTINGS.database_url,
+    echo=SETTINGS.database_echo,
+    connect_args={"check_same_thread": SETTINGS.database_connect_check_same_thread},
+    poolclass=StaticPool if SETTINGS.database_use_static_pool else None,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
 
 
