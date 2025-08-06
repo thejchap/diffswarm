@@ -7,8 +7,9 @@ database utils/models.
 """
 
 from collections.abc import Generator
+from typing import assert_never
 
-from sqlalchemy import StaticPool, String, Text, create_engine
+from sqlalchemy import Pool, QueuePool, StaticPool, String, Text, create_engine
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -17,7 +18,17 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 
-from .settings import get_settings
+from .settings import Settings, get_settings
+
+
+def _get_poolclass(settings: Settings) -> type[Pool]:
+    match settings.database_poolclass:
+        case "QueuePool":
+            return QueuePool
+        case "StaticPool":
+            return StaticPool
+    assert_never(settings.database_poolclass)
+
 
 SETTINGS = get_settings()
 # https://docs.sqlalchemy.org/en/20/dialects/sqlite.html#using-a-memory-database-in-multiple-threads
@@ -25,7 +36,7 @@ ENGINE = create_engine(
     url=SETTINGS.database_url,
     echo=SETTINGS.database_echo,
     connect_args={"check_same_thread": SETTINGS.database_connect_check_same_thread},
-    poolclass=StaticPool if SETTINGS.database_use_static_pool else None,
+    poolclass=_get_poolclass(SETTINGS),
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
 
