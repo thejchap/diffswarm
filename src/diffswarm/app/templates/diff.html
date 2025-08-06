@@ -1,142 +1,74 @@
-<!doctype html>
-<html lang="en" class="dark">
-  <head>
-    <title>{{ diff.id_ }}</title>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap"
-      rel="stylesheet"
-    />
-    <script type="importmap">
-      {
-        "imports": {
-          "vue": "https://unpkg.com/vue@3.5.18/dist/vue.esm-browser.js"
-        }
-      }
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="/static/js/diff.js" type="module"></script>
-    <style type="text/tailwindcss">
-      @theme {
-        --color-monokai-bg: hsl(220 13% 9%);
-        --color-monokai-surface: hsl(220 13% 11%);
-        --color-monokai-elevated: hsl(220 13% 15%);
-        --color-monokai-border: hsl(220 13% 18%);
-        --color-monokai-muted: hsl(220 9% 46%);
-        --color-monokai-text: hsl(60 9% 87%);
-        --color-monokai-yellow: hsl(54 100% 68%);
-        --color-monokai-orange: hsl(31 100% 71%);
-        --color-monokai-red: hsl(0 100% 67%);
-        --color-monokai-magenta: hsl(326 100% 74%);
-        --color-monokai-blue: hsl(210 100% 66%);
-        --color-monokai-cyan: hsl(180 100% 66%);
-        --color-monokai-green: hsl(120 100% 75%);
-        --color-monokai-diff-add: hsl(120 100% 60%);
-        --color-monokai-diff-remove: hsl(0 100% 65%);
-      }
+{% extends "base.html" %}
 
-      :root {
-        --background: 0 0% 100%;
-        --foreground: 222.2 84% 4.9%;
-        --diff-add-bg: 142 76% 96%;
-        --diff-add-border: 142 76% 36%;
-        --diff-add-text: 142 76% 20%;
-        --diff-remove-bg: 0 93% 96%;
-        --diff-remove-border: 0 93% 46%;
-        --diff-remove-text: 0 93% 25%;
-      }
+{% block title %}{{ diff.id_ }}{% endblock %}
 
-      .dark {
-        --background: 222.2 84% 4.9%;
-        --foreground: 210 40% 98%;
-        --diff-add-bg: 142 76% 10%;
-        --diff-add-border: 142 76% 36%;
-        --diff-add-text: 142 76% 85%;
-        --diff-remove-bg: 0 93% 10%;
-        --diff-remove-border: 0 93% 46%;
-        --diff-remove-text: 0 93% 85%;
-      }
+{% block scripts %}
+  <script src="/static/js/diff.js" type="module"></script>
+{% endblock %}
 
-      .font-code {
-        font-family:
-          "JetBrains Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono",
-          Consolas, "Courier New", monospace;
-        font-feature-settings:
-          "liga" 1,
-          "calt" 1;
-        font-variant-ligatures: common-ligatures;
-      }
+{% block content %}
+  <div id="root" data-diff-id="{{ diff.id_ }}"></div>
+  {% raw %}
+    <template id="file-header">
+      <div
+        class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex-1">
+            <div class="flex items-center gap-4 mb-3">
+              <!-- filerename -->
 
-      html {
-        background-color: hsl(var(--background));
-      }
-    </style>
-  </head>
-  <body>
-    <div id="root" data-diff-id="{{ diff.id_ }}"></div>
-    {% raw %}
-      <template id="file-header">
-        <div
-          class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
-        >
-          <div class="flex items-center justify-between mb-4">
-            <div class="flex-1">
-              <div class="flex items-center gap-4 mb-3">
-                <!-- filerename -->
-
-                <div class="flex items-center gap-2 group">
-                  <h1
-                    class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
-                  >
-                    {{ diffId }}
-                  </h1>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- search wrapper -->
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <div className="relative flex-1 w-full">
-                <div
-                  class="relative flex items-center transition-all duration-200 border border-gray-200 dark:border-monokai-border rounded-lg bg-gray-50 dark:bg-monokai-elevated hover:bg-gray-100 dark:hover:bg-monokai-surface"
+              <div class="flex items-center gap-2 group">
+                <h1
+                  class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
                 >
-                  <input
-                    type="text"
-                    placeholder="Search hunks and content... (⌘K)"
-                    class="flex-1 px-3 py-2 text-sm bg-transparent text-gray-900 dark:text-monokai-text placeholder-gray-500 dark:placeholder-monokai-muted focus:outline-none"
-                  />
-                </div>
+                  {{ diffId }}
+                </h1>
               </div>
             </div>
-            <!-- <HunkFilter /> -->
           </div>
+        </div>
 
-          <!-- next -->
-        </div>
-      </template>
-      <template id="app">
-        <!-- outermost - DiffViewerDemo -->
-        <div
-          class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-monokai-bg dark:via-monokai-bg dark:to-monokai-surface py-8"
-        >
-          <!-- DiffViewer  -->
-          <div class="max-w-6xl mx-auto">
-            <!--  main content, original header  -->
-            <div
-              class="bg-white dark:bg-monokai-bg border border-gray-200 dark:border-monokai-border rounded-2xl shadow-elegant overflow-hidden"
-            >
-              <!--  header - stays in original position  -->
-              <div class="border-b border-gray-200 dark:border-monokai-border">
-                <!-- fileheader -->
-                <file-header></file-header>
+        <!-- search wrapper -->
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <div className="relative flex-1 w-full">
+              <div
+                class="relative flex items-center transition-all duration-200 border border-gray-200 dark:border-monokai-border rounded-lg bg-gray-50 dark:bg-monokai-elevated hover:bg-gray-100 dark:hover:bg-monokai-surface"
+              >
+                <input
+                  type="text"
+                  placeholder="Search hunks and content... (⌘K)"
+                  class="flex-1 px-3 py-2 text-sm bg-transparent text-gray-900 dark:text-monokai-text placeholder-gray-500 dark:placeholder-monokai-muted focus:outline-none"
+                />
               </div>
             </div>
           </div>
+          <!-- <HunkFilter /> -->
         </div>
-      </template>
-    {% endraw %}
-  </body>
-</html>
+
+        <!-- next -->
+      </div>
+    </template>
+    <template id="app">
+      <!-- outermost - DiffViewerDemo -->
+      <div
+        class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-monokai-bg dark:via-monokai-bg dark:to-monokai-surface py-8"
+      >
+        <!-- DiffViewer  -->
+        <div class="max-w-6xl mx-auto">
+          <!--  main content, original header  -->
+          <div
+            class="bg-white dark:bg-monokai-bg border border-gray-200 dark:border-monokai-border rounded-2xl shadow-elegant overflow-hidden"
+          >
+            <!--  header - stays in original position  -->
+            <div class="border-b border-gray-200 dark:border-monokai-border">
+              <!-- fileheader -->
+              <file-header></file-header>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  {% endraw %}
+{% endblock %}
