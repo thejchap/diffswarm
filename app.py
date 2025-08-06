@@ -1,3 +1,3 @@
-from diffswarm.app import APP
+from diffswarm import APP
 
 __all__ = ["APP"]

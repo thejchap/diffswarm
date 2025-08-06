@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BeforeValidator
+from starlette.status import HTTP_201_CREATED
 from ulid import ULID
 
 from diffswarm.app.database import DBDiff
@@ -35,6 +36,7 @@ def get_diff(
 @ROUTER.post(
     "/",
     response_class=PlainTextResponse,
+    status_code=HTTP_201_CREATED,
     description="""\
 Create a new diff from a unified diff string
 
@@ -47,6 +49,7 @@ curl --header 'Content-Type: text/plain' -X POST --data-binary @- localhost:8000
 )
 def create_diff(
     req: Request,
+    res: Response,
     body: Annotated[
         DiffBase,
         BeforeValidator(DiffBase.parse_bytes, json_schema_input_type=str),
@@ -58,4 +61,5 @@ def create_diff(
     session.add(db_diff)
     session.commit()
     session.refresh(db_diff)
+    res.headers["X-Diff-ID"] = db_diff.id
     return f"{req.url_for('get_diff', diff_id=db_diff.id)}\n"
