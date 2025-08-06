@@ -47,7 +47,7 @@ const App = {
       hunks,
     };
   },
-  template: "#my-template-element",
+  template: "#app",
   methods: {
     test() {
       const yarray = this.doc.getArray("my-array");
@@ -60,6 +60,6 @@ const App = {
  * set up and mount the app
  */
 
-const $APP = document.getElementById("app");
+const $APP = document.getElementById("root");
 const { diffId: DIFF_ID } = $APP.dataset;
 createApp(App).provide("diffId", DIFF_ID).mount($APP);

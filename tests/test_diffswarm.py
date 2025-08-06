@@ -29,6 +29,19 @@ class TestPages:
         res = client.get(f"/diffs/{ULID()}")
         assert res.status_code == HTTP_404_NOT_FOUND
 
+    def test_create_get_diff(self, client: TestClient) -> None:
+        res = client.post(
+            "/",
+            content=DiffBase.HELLO_WORLD,
+            headers={"Content-Type": "text/plain"},
+        )
+        assert res.status_code == HTTP_201_CREATED, res.text
+        diff_id = res.headers["X-Diff-ID"]
+        res = client.get(f"/diffs/{diff_id}")
+        assert res.status_code == HTTP_200_OK
+        body = res.text
+        assert "<html" in body
+
 
 class TestAPI:
     def test_get_diff_invalid_id(self, client: TestClient) -> None:
