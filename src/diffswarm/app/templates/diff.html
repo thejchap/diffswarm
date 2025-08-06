@@ -18,81 +18,46 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="/static/js/diff.js" type="module"></script>
     <style type="text/tailwindcss">
-      @tailwind base;
-      @tailwind components;
-      @tailwind utilities;
-
-      /* Import JetBrains Mono font */
-
-      @layer base {
-        :root {
-          --background: 0 0% 100%;
-          --foreground: 222.2 84% 4.9%;
-          --card: 0 0% 100%;
-          --card-foreground: 222.2 84% 4.9%;
-          --popover: 0 0% 100%;
-          --popover-foreground: 222.2 84% 4.9%;
-          --primary: 222.2 47.4% 11.2%;
-          --primary-foreground: 210 40% 98%;
-          --secondary: 210 40% 96%;
-          --secondary-foreground: 222.2 47.4% 11.2%;
-          --muted: 210 40% 96%;
-          --muted-foreground: 215.4 16.3% 46.9%;
-          --accent: 210 40% 96%;
-          --accent-foreground: 222.2 47.4% 11.2%;
-          --destructive: 0 84.2% 60.2%;
-          --destructive-foreground: 210 40% 98%;
-          --border: 214.3 31.8% 91.4%;
-          --input: 214.3 31.8% 91.4%;
-          --ring: 222.2 84% 4.9%;
-          --radius: 0.5rem;
-          --chart-1: 12 76% 61%;
-          --chart-2: 173 58% 39%;
-          --chart-3: 197 37% 24%;
-          --chart-4: 43 74% 66%;
-          --chart-5: 27 87% 67%;
-
-          /* Custom diff colors */
-          --diff-add-bg: 142 76% 96%;
-          --diff-add-border: 142 76% 36%;
-          --diff-add-text: 142 76% 20%;
-          --diff-remove-bg: 0 93% 96%;
-          --diff-remove-border: 0 93% 46%;
-          --diff-remove-text: 0 93% 25%;
-        }
-
-        .dark {
-          --background: 222.2 84% 4.9%;
-          --foreground: 210 40% 98%;
-          --card: 222.2 84% 4.9%;
-          --card-foreground: 210 40% 98%;
-          --popover: 222.2 84% 4.9%;
-          --popover-foreground: 210 40% 98%;
-          --primary: 210 40% 98%;
-          --primary-foreground: 222.2 47.4% 11.2%;
-          --secondary: 217.2 32.6% 17.5%;
-          --secondary-foreground: 210 40% 98%;
-          --muted: 217.2 32.6% 17.5%;
-          --muted-foreground: 215 20.2% 65.1%;
-          --accent: 217.2 32.6% 17.5%;
-          --accent-foreground: 210 40% 98%;
-          --destructive: 0 62.8% 30.6%;
-          --destructive-foreground: 210 40% 98%;
-          --border: 217.2 32.6% 17.5%;
-          --input: 217.2 32.6% 17.5%;
-          --ring: 212.7 26.8% 83.9%;
-
-          /* Custom diff colors for dark mode */
-          --diff-add-bg: 142 76% 10%;
-          --diff-add-border: 142 76% 36%;
-          --diff-add-text: 142 76% 85%;
-          --diff-remove-bg: 0 93% 10%;
-          --diff-remove-border: 0 93% 46%;
-          --diff-remove-text: 0 93% 85%;
-        }
+      @theme {
+        --color-monokai-bg: hsl(220 13% 9%);
+        --color-monokai-surface: hsl(220 13% 11%);
+        --color-monokai-elevated: hsl(220 13% 15%);
+        --color-monokai-border: hsl(220 13% 18%);
+        --color-monokai-muted: hsl(220 9% 46%);
+        --color-monokai-text: hsl(60 9% 87%);
+        --color-monokai-yellow: hsl(54 100% 68%);
+        --color-monokai-orange: hsl(31 100% 71%);
+        --color-monokai-red: hsl(0 100% 67%);
+        --color-monokai-magenta: hsl(326 100% 74%);
+        --color-monokai-blue: hsl(210 100% 66%);
+        --color-monokai-cyan: hsl(180 100% 66%);
+        --color-monokai-green: hsl(120 100% 75%);
+        --color-monokai-diff-add: hsl(120 100% 60%);
+        --color-monokai-diff-remove: hsl(0 100% 65%);
       }
 
-      /* Custom font classes */
+      :root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --diff-add-bg: 142 76% 96%;
+        --diff-add-border: 142 76% 36%;
+        --diff-add-text: 142 76% 20%;
+        --diff-remove-bg: 0 93% 96%;
+        --diff-remove-border: 0 93% 46%;
+        --diff-remove-text: 0 93% 25%;
+      }
+
+      .dark {
+        --background: 222.2 84% 4.9%;
+        --foreground: 210 40% 98%;
+        --diff-add-bg: 142 76% 10%;
+        --diff-add-border: 142 76% 36%;
+        --diff-add-text: 142 76% 85%;
+        --diff-remove-bg: 0 93% 10%;
+        --diff-remove-border: 0 93% 46%;
+        --diff-remove-text: 0 93% 85%;
+      }
+
       .font-code {
         font-family:
           "JetBrains Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono",
@@ -103,58 +68,71 @@
         font-variant-ligatures: common-ligatures;
       }
 
-      /* Enhanced diff styling */
-      .diff-add {
-        background-color: hsl(var(--diff-add-bg));
-        border-left-color: hsl(var(--diff-add-border));
-        color: hsl(var(--diff-add-text));
-      }
-
-      .diff-remove {
-        background-color: hsl(var(--diff-remove-bg));
-        border-left-color: hsl(var(--diff-remove-border));
-        color: hsl(var(--diff-remove-text));
-      }
-
-      /* Smooth transitions */
-      .transition-diff {
-        transition: all 0.15s ease-in-out;
-      }
-
-      /* Enhanced shadows */
-      .shadow-elegant {
-        box-shadow:
-          0 4px 6px -1px rgb(0 0 0 / 0.1),
-          0 2px 4px -2px rgb(0 0 0 / 0.1);
-      }
-
-      .dark .shadow-elegant {
-        box-shadow:
-          0 4px 6px -1px rgb(0 0 0 / 0.3),
-          0 2px 4px -2px rgb(0 0 0 / 0.2);
+      html {
+        background-color: hsl(var(--background));
       }
     </style>
   </head>
-  <body
-    class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-monokai-bg dark:via-monokai-bg dark:to-monokai-surface py-8"
-  >
+  <body>
     <div id="root" data-diff-id="{{ diff.id_ }}"></div>
     {% raw %}
-      <template id="app">
-        <div className="max-w-6xl mx-auto">
-          <div
-            className="bg-white dark:bg-monokai-bg border border-gray-200 dark:border-monokai-border rounded-2xl shadow-elegant overflow-hidden"
-          >
-            <div
-              className="border-b border-gray-200 dark:border-monokai-border"
-            >
-              <!-- header -->
+      <template id="file-header">
+        <div
+          class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
+        >
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex-1">
+              <div class="flex items-center gap-4 mb-3">
+                <!-- filerename -->
+
+                <div class="flex items-center gap-2 group">
+                  <h1
+                    class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
+                  >
+                    {{ diffId }}
+                  </h1>
+                </div>
+              </div>
             </div>
-            <div>
-              <!-- main -->
-              <div
-                className="divide-y divide-gray-200/50 dark:divide-monokai-border/50"
-              ></div>
+          </div>
+
+          <!-- search wrapper -->
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <div className="relative flex-1 w-full">
+                <div
+                  class="relative flex items-center transition-all duration-200 border border-gray-200 dark:border-monokai-border rounded-lg bg-gray-50 dark:bg-monokai-elevated hover:bg-gray-100 dark:hover:bg-monokai-surface"
+                >
+                  <input
+                    type="text"
+                    placeholder="Search hunks and content... (⌘K)"
+                    class="flex-1 px-3 py-2 text-sm bg-transparent text-gray-900 dark:text-monokai-text placeholder-gray-500 dark:placeholder-monokai-muted focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+            <!-- <HunkFilter /> -->
+          </div>
+
+          <!-- next -->
+        </div>
+      </template>
+      <template id="app">
+        <!-- outermost - DiffViewerDemo -->
+        <div
+          class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-monokai-bg dark:via-monokai-bg dark:to-monokai-surface py-8"
+        >
+          <!-- DiffViewer  -->
+          <div class="max-w-6xl mx-auto">
+            <!--  main content, original header  -->
+            <div
+              class="bg-white dark:bg-monokai-bg border border-gray-200 dark:border-monokai-border rounded-2xl shadow-elegant overflow-hidden"
+            >
+              <!--  header - stays in original position  -->
+              <div class="border-b border-gray-200 dark:border-monokai-border">
+                <!-- fileheader -->
+                <file-header></file-header>
+              </div>
             </div>
           </div>
         </div>
