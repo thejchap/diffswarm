@@ -29,7 +29,9 @@ def get_diff(
         session.query(DBDiff.id, DBDiff.raw).filter(DBDiff.id == str(diff_id)).one()
     )
     return TEMPLATES.TemplateResponse(
-        request=request, name="pages/diffs/[diff_id]/index.html", context={"diff": diff}
+        request=request,
+        name="pages/diffs/[diff_id]/index.html",
+        context={"diff": diff},
     )
 
 
