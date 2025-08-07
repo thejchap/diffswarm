@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ diff.id_ }}{% endblock %}
+{% block scripts %}
+  <script src="/static/js/diff.js" type="module"></script>
+{% endblock %}
+{% block content %}
+  <div id="root" data-diff-id="{{ diff.id_ }}"></div>
+  {% include "includes/diff-app.html" %}
+  {% include "includes/diff-file-header.html" %}
+{% endblock %}
