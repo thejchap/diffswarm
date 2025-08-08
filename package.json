@@ -6,6 +6,7 @@
     "tsc": "tsc -p . --noEmit"
   },
   "devDependencies": {
+    "@preact/signals": "2.2.1",
     "htm": "3.1.1",
     "preact": "10.23.1",
     "prettier": "3.6.2",

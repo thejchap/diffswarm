@@ -1,8 +1,28 @@
 // @ts-check
 
 import { html } from "htm/preact";
-import { render } from "preact";
+import { createContext, render } from "preact";
+import { signal } from "@preact/signals";
+import { useContext } from "preact/hooks";
 
+const $APP = document.getElementById("app");
+if (!$APP) {
+  throw new Error("unable to find #app");
+}
+const { diffPrefetch: DIFF_PREFETCH } = $APP.dataset;
+function createAppState() {
+  if (!DIFF_PREFETCH) {
+    throw new Error("unable to load diff prefetch");
+  }
+  const diff = signal(JSON.parse(DIFF_PREFETCH));
+  return { diff };
+}
+const DEFAULT_STATE = createAppState();
+const AppState = createContext(DEFAULT_STATE);
+
+/**
+ * components
+ */
 function HunkRename() {
   const hunkId = "test";
   const handleEdit = () => {};
@@ -185,6 +205,7 @@ function Hunk() {
 }
 
 function FileHeader() {
+  const { diff } = useContext(AppState);
   return html`
     <div
       class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
@@ -198,7 +219,7 @@ function FileHeader() {
               <h1
                 class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
               >
-                {{ diffId }}
+                ${diff.value.id}
               </h1>
             </div>
           </div>
@@ -264,9 +285,11 @@ function App() {
 /**
  * set up and mount the app
  */
-const $APP = document.getElementById("app");
-if (!$APP) {
-  throw new Error("unable to find #app");
-}
-const { diffPrefetch: _DIFF_PREFETCH } = $APP.dataset;
-render(html`<${App} />`, $APP);
+render(
+  html`
+    <${AppState.Provider} value=${DEFAULT_STATE}>
+      <${App} />
+    <//>
+  `,
+  $APP,
+);
