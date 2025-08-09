@@ -11,4 +11,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --locked --no-editable
 FROM python:3.13-slim
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
-CMD ["uv", "run", "fastapi", "run"]
+CMD ["./.venv/bin/fastapi", "run"]
