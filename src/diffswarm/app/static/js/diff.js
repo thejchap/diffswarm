@@ -78,7 +78,8 @@ const { diffPrefetch: DIFF_PREFETCH, commentsPrefetch: COMMENTS_PREFETCH } =
  *  diff: import("@preact/signals").Signal<Diff>,
  *  comments: import("@preact/signals").Signal<Comment[]>,
  *  isEditing: import("@preact/signals").Signal<boolean>,
- *  editValue: import("@preact/signals").Signal<string>
+ *  editValue: import("@preact/signals").Signal<string>,
+ *  collapsedHunks: import("@preact/signals").Signal<Set<number>>
  * }} AppStateType
  */
 
@@ -122,7 +123,10 @@ function createAppState() {
   const isEditing = signal(false);
   const editValue = signal("");
 
-  return { diff, comments, isEditing, editValue };
+  // Collapsed hunks state
+  const collapsedHunks = signal(/** @type {Set<number>} */ (new Set()));
+
+  return { diff, comments, isEditing, editValue, collapsedHunks };
 }
 
 /**
@@ -1025,14 +1029,13 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
 /**
  * components
  */
-/** @param {{ hunk: Hunk, hunkId: string }} props */
-function HunkHeader({ hunk, hunkId }) {
+/** @param {{ hunk: Hunk, hunkId: string, isCollapsed: boolean, onToggleCollapse: () => void }} props */
+function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
   const { getTotalHunkCommentsCount, addComment } = useComments();
   const [showCommentForm, setShowCommentForm] = useState(false);
   const additions = 5;
   const deletions = 3;
   const commentCount = getTotalHunkCommentsCount(hunkId);
-  const isCollapsed = false;
   const isCompleted = false;
   const hunkIndex = 0;
   const isCopied = false;
@@ -1042,7 +1045,6 @@ function HunkHeader({ hunk, hunkId }) {
   };
   const onCopy = () => {};
   const onShare = () => {};
-  const onToggleCollapse = () => {};
   const diff = useDiff();
 
   const onRenameHunk = async (
@@ -1175,12 +1177,12 @@ function HunkHeader({ hunk, hunkId }) {
               >
                 ${isCollapsed
                   ? html`
-                      <ChevronRight
+                      <${ChevronRight}
                         class="w-3.5 h-3.5 text-gray-400 transition-transform"
                       />
                     `
                   : html`
-                      <ChevronDown
+                      <${ChevronDown}
                         class="w-3.5 h-3.5 text-gray-400 transition-transform"
                       />
                     `}
@@ -1381,54 +1383,76 @@ function Hunk({ hunk, hunkIndex }) {
   const hunkId = `hunk-${hunkIndex}`;
   const { getCommentsForHunk, deleteComment } = useComments();
   const hunkComments = getCommentsForHunk(hunkId);
+  const appState = useContext(AppState);
+  if (!appState) throw new Error("Hunk must be used within AppState");
+
+  const isCollapsed = appState.collapsedHunks.value.has(hunkIndex);
+
+  const handleToggleCollapse = () => {
+    const newCollapsed = new Set(appState.collapsedHunks.value);
+    if (newCollapsed.has(hunkIndex)) {
+      newCollapsed.delete(hunkIndex);
+    } else {
+      newCollapsed.add(hunkIndex);
+    }
+    appState.collapsedHunks.value = newCollapsed;
+  };
 
   return html`
     <div class="dark:bg-monokai-bg transition-all duration-300">
       <!-- hunk header -->
-      <${HunkHeader} hunk=${hunk} hunkId=${hunkId} />
+      <${HunkHeader}
+        hunk=${hunk}
+        hunkId=${hunkId}
+        isCollapsed=${isCollapsed}
+        onToggleCollapse=${handleToggleCollapse}
+      />
 
-      <!-- hunk body -->
-      <div
-        class="font-code text-sm border-t border-gray-200/50 dark:border-monokai-border/50"
-      >
-        <!-- lines -->
-        ${hunk.lines.map(
-          /** @param {any} line */
-          (line, /** @type {number} */ lineIndex) =>
-            html`<${Line}
-              line=${line}
-              hunkId=${hunkId}
-              lineIndex=${lineIndex}
-            />`,
-        )}
-      </div>
-
-      <!-- Hunk-level comments -->
-      ${hunkComments.length > 0 &&
+      <!-- hunk body - simple conditional rendering like original -->
+      ${!isCollapsed &&
       html`
         <div
-          class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+          class="font-code text-sm border-t border-gray-200/50 dark:border-monokai-border/50"
         >
-          <div class="space-y-3">
-            ${hunkComments.map(
-              (
-                /** @type {Comment} */ comment,
-                /** @type {number} */ index,
-              ) => html`
-                <${CommentItem}
-                  key=${comment.id}
-                  comment=${comment}
-                  onReply=${(/** @type {Comment} */ replyToComment) => {
-                    // Reply functionality handled by CommentItem internally
-                  }}
-                  onDelete=${(/** @type {string} */ commentId) => {
-                    deleteComment(commentId);
-                  }}
-                />
-              `,
-            )}
-          </div>
+          <!-- lines -->
+          ${hunk.lines.map(
+            /** @param {any} line */
+            (line, /** @type {number} */ lineIndex) =>
+              html`<${Line}
+                line=${line}
+                hunkId=${hunkId}
+                lineIndex=${lineIndex}
+              />`,
+          )}
         </div>
+
+        <!-- Hunk-level comments -->
+        ${hunkComments.length > 0 &&
+        html`
+          <div
+            class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+          >
+            <div class="space-y-3">
+              ${hunkComments.map(
+                (
+                  /** @type {Comment} */ comment,
+                  /** @type {number} */ index,
+                ) => html`
+                  <${CommentItem}
+                    key=${comment.id}
+                    comment=${comment}
+                    onReply=${(/** @type {Comment} */ replyToComment) => {
+                      // Reply functionality handled by CommentItem internally
+                    }}
+                    onDelete=${(/** @type {string} */ commentId) => {
+                      deleteComment(commentId);
+                    }}
+                  />
+                `,
+              )}
+            </div>
+          </div>
+        `}
       `}
     </div>
   `;
@@ -1578,6 +1602,34 @@ function FileRename() {
 
 function FileHeader() {
   const diff = useDiff();
+  const appState = useContext(AppState);
+  if (!appState) throw new Error("FileHeader must be used within AppState");
+
+  // Calculate if all hunks are collapsed
+  const allHunksCollapsed =
+    diff.value.hunks.length > 0 &&
+    diff.value.hunks.every((_, index) =>
+      appState.collapsedHunks.value.has(index),
+    );
+
+  // Toggle all hunks expand/collapse
+  const toggleAllHunks = () => {
+    const newCollapsed = new Set(appState.collapsedHunks.value);
+
+    if (allHunksCollapsed) {
+      // Expand all hunks
+      diff.value.hunks.forEach((_, index) => {
+        newCollapsed.delete(index);
+      });
+    } else {
+      // Collapse all hunks
+      diff.value.hunks.forEach((_, index) => {
+        newCollapsed.add(index);
+      });
+    }
+
+    appState.collapsedHunks.value = newCollapsed;
+  };
   return html`
     <div
       class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
@@ -1615,6 +1667,32 @@ function FileHeader() {
               </div>
             `}
           </div>
+        </div>
+
+        <!-- Right side controls -->
+        <div class="flex items-center gap-1">
+          <button
+            onClick=${toggleAllHunks}
+            class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm"
+            aria-label=${allHunksCollapsed
+              ? "Expand all hunks"
+              : "Collapse all hunks"}
+            title=${allHunksCollapsed
+              ? "Expand all hunks"
+              : "Collapse all hunks"}
+          >
+            ${allHunksCollapsed
+              ? html`
+                  <${ChevronRight}
+                    class="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors"
+                  />
+                `
+              : html`
+                  <${ChevronDown}
+                    class="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors"
+                  />
+                `}
+          </button>
         </div>
       </div>
 
