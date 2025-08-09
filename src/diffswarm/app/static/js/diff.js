@@ -3,7 +3,7 @@
 import { html } from "htm/preact";
 import { createContext, render } from "preact";
 import { signal } from "@preact/signals";
-import { useContext } from "preact/hooks";
+import { useContext, useState, useEffect, useRef } from "preact/hooks";
 
 const $APP = document.getElementById("app");
 if (!$APP) {
@@ -13,8 +13,35 @@ const { diffPrefetch: DIFF_PREFETCH } = $APP.dataset;
 
 /**
  * @typedef {{
+ *  id: string,
+ *  text: string,
+ *  author: string,
+ *  timestamp: Date,
+ *  hunkId: string,
+ *  lineIndex?: number,
+ *  selectedText?: string,
+ *  startOffset?: number,
+ *  endOffset?: number,
+ *  parentId?: string,
+ *  replies?: Comment[]
+ * }} Comment
+ */
+
+/**
+ * @typedef {{
+ *  hunkId: string,
+ *  lineIndex?: number,
+ *  selectedText?: string,
+ *  startOffset?: number,
+ *  endOffset?: number,
+ *  parentId?: string
+ * }} CommentFormState
+ */
+
+/**
+ * @typedef {{
  *  diff: import("@preact/signals").Signal<any>,
- *  comments: import("@preact/signals").Signal<any[]>
+ *  comments: import("@preact/signals").Signal<Comment[]>
  * }} AppStateType
  */
 
@@ -26,8 +53,241 @@ function createAppState() {
     throw new Error("unable to load diff prefetch");
   }
   const diff = signal(/** @type {any} */ (JSON.parse(DIFF_PREFETCH)));
-  const comments = signal([]);
+  const comments = signal(/** @type {Comment[]} */ (getSampleComments()));
   return { diff, comments };
+}
+
+/**
+ * Sample comment data for testing
+ * @returns {Comment[]}
+ */
+function getSampleComments() {
+  return [
+    {
+      id: "1",
+      text: "This looks good! Nice implementation of the authentication logic.",
+      author: "Alice Johnson",
+      timestamp: new Date("2024-12-15T10:30:00Z"),
+      hunkId: "hunk-0",
+      lineIndex: 2,
+    },
+    {
+      id: "2",
+      text: "Should we add error handling for the edge case where the token expires?",
+      author: "Bob Smith",
+      timestamp: new Date("2024-12-15T11:15:00Z"),
+      hunkId: "hunk-0",
+      lineIndex: 5,
+      selectedText: "validateToken(token)",
+    },
+    {
+      id: "3",
+      text: "Good point! I'll add that in the next commit.",
+      author: "Alice Johnson",
+      timestamp: new Date("2024-12-15T11:20:00Z"),
+      hunkId: "hunk-0",
+      lineIndex: 5,
+      parentId: "2",
+    },
+    {
+      id: "4",
+      text: "Overall this hunk looks solid. The refactor makes the code much cleaner.",
+      author: "Carol Davis",
+      timestamp: new Date("2024-12-15T14:45:00Z"),
+      hunkId: "hunk-0",
+    },
+    {
+      id: "5",
+      text: "Agreed! Much more readable now.",
+      author: "Dave Wilson",
+      timestamp: new Date("2024-12-15T15:00:00Z"),
+      hunkId: "hunk-0",
+      parentId: "4",
+    },
+  ];
+}
+
+// Icon components using Lucide icons
+/** @param {{ class: string }} props */
+function MessageSquare({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Edit3({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Copy({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Share2({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="m8.59 13.51 6.83 3.98" />
+    <path d="m15.41 6.51-6.82 3.98" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function ChevronDown({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="m6 9 6 6 6-6" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function ChevronRight({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="m9 18 6-6-6-6" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Plus({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M5 12h14" />
+    <path d="M12 5v14" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function MoreVertical({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="12" cy="5" r="1" />
+    <circle cx="12" cy="19" r="1" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Reply({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <polyline points="9,17 4,12 9,7" />
+    <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Trash2({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="m3 6 18 0" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c0 1 1 2 2 2v2" />
+  </svg>`;
 }
 
 const AppState = createContext(/** @type {AppStateType | null} */ (null));
@@ -35,9 +295,423 @@ const AppState = createContext(/** @type {AppStateType | null} */ (null));
 function useDiff() {
   const ctx = useContext(AppState);
   if (!ctx) {
-    throw new Error("useItems must be used within <ItemsProvider>");
+    throw new Error("useDiff must be used within <AppState.Provider>");
   }
-  return ctx;
+  return ctx.diff;
+}
+
+/**
+ * comment helper functions
+ */
+function useComments() {
+  const ctx = useContext(AppState);
+  if (!ctx) {
+    throw new Error("useComments must be used within AppState Provider");
+  }
+
+  const { comments } = ctx;
+
+  const addComment = (
+    /** @type {CommentFormState} */ formState,
+    /** @type {string} */ text,
+  ) => {
+    const newComment = {
+      id: `comment-${Date.now()}`,
+      text: text.trim(),
+      author: "Current User",
+      timestamp: new Date(),
+      hunkId: formState.hunkId,
+      lineIndex: formState.lineIndex,
+      selectedText: formState.selectedText,
+      startOffset: formState.startOffset,
+      endOffset: formState.endOffset,
+      parentId: formState.parentId,
+    };
+    comments.value = [...comments.value, newComment];
+  };
+
+  const deleteComment = (/** @type {string} */ commentId) => {
+    const deleteRecursive = (
+      /** @type {Comment[]} */ comments,
+      /** @type {string} */ id,
+    ) => {
+      return comments.filter((/** @type {Comment} */ comment) => {
+        if (comment.id === id) return false;
+        if (comment.parentId === id) return false;
+        return true;
+      });
+    };
+    comments.value = deleteRecursive(comments.value, commentId);
+  };
+
+  const getCommentsForHunk = (/** @type {string} */ hunkId) => {
+    return comments.value.filter(
+      (comment) =>
+        comment.hunkId === hunkId &&
+        !comment.parentId &&
+        comment.lineIndex === undefined,
+    );
+  };
+
+  const getCommentsForLine = (
+    /** @type {string} */ hunkId,
+    /** @type {number} */ lineIndex,
+  ) => {
+    return comments.value.filter(
+      (comment) =>
+        comment.hunkId === hunkId &&
+        comment.lineIndex === lineIndex &&
+        !comment.parentId,
+    );
+  };
+
+  const getRepliesForComment = (/** @type {string} */ commentId) => {
+    return comments.value.filter((comment) => comment.parentId === commentId);
+  };
+
+  const getTotalCommentsCount = () => {
+    return comments.value.length;
+  };
+
+  const getTotalHunkCommentsCount = (/** @type {string} */ hunkId) => {
+    return comments.value.filter((comment) => comment.hunkId === hunkId).length;
+  };
+
+  return {
+    comments: comments.value,
+    addComment,
+    deleteComment,
+    getCommentsForHunk,
+    getCommentsForLine,
+    getRepliesForComment,
+    getTotalCommentsCount,
+    getTotalHunkCommentsCount,
+  };
+}
+
+/**
+ * @param {any} props
+ */
+function CommentForm({
+  onCancel,
+  onSubmit,
+  placeholder = "Add a comment...",
+  selectedText,
+  parentComment,
+}) {
+  const [commentText, setCommentText] = useState("");
+  const textareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
+
+  // Auto-focus the textarea when component mounts
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
+
+  const handleSubmit = (/** @type {Event} */ e) => {
+    e.preventDefault();
+    if (commentText.trim()) {
+      onSubmit(commentText);
+      setCommentText(""); // Clear form after submit
+    }
+  };
+
+  const handleKeyDown = (/** @type {KeyboardEvent} */ e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      handleSubmit(e);
+    } else if (e.key === "Escape") {
+      onCancel();
+    }
+  };
+
+  return html`
+    <div
+      class="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm"
+    >
+      ${selectedText &&
+      html`
+        <div
+          class="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700"
+        >
+          <div
+            class="text-xs text-blue-600 dark:text-blue-400 font-medium mb-1"
+          >
+            Commenting on:
+          </div>
+          <div
+            class="font-code text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 px-2 py-1 rounded border"
+          >
+            "${selectedText}"
+          </div>
+        </div>
+      `}
+      ${parentComment &&
+      html`
+        <div
+          class="px-4 py-2 bg-gray-50 dark:bg-gray-750 border-b border-gray-200 dark:border-gray-700"
+        >
+          <div
+            class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1"
+          >
+            Replying to ${parentComment.author}:
+          </div>
+          <div class="text-sm text-gray-600 dark:text-gray-300 truncate">
+            ${parentComment.text}
+          </div>
+        </div>
+      `}
+
+      <form onSubmit=${handleSubmit} class="p-4">
+        <textarea
+          ref=${textareaRef}
+          value=${commentText}
+          onInput=${(/** @type {Event} */ e) =>
+            setCommentText(/** @type {HTMLTextAreaElement} */ (e.target).value)}
+          onKeyDown=${handleKeyDown}
+          placeholder=${placeholder}
+          rows="3"
+          class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+        />
+
+        <div class="flex items-center justify-between mt-3">
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            Press ${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter to
+            submit, Esc to cancel
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onClick=${onCancel}
+              class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled=${!commentText.trim()}
+              class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+            >
+              Comment
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+/**
+ * @param {any} props
+ */
+function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
+  return html`
+    <div class="relative">
+      <button
+        onClick=${onToggle}
+        class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        aria-label="Comment actions"
+      >
+        <${MoreVertical} class="w-4 h-4 text-gray-400" />
+      </button>
+
+      ${isOpen &&
+      html`
+        <div
+          class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-10 min-w-[120px]"
+        >
+          <button
+            onClick=${() => {
+              onReply();
+              onToggle();
+            }}
+            class="w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+          >
+            <${Reply} class="w-3.5 h-3.5" />
+            Reply
+          </button>
+          <button
+            onClick=${() => {
+              onDelete();
+              onToggle();
+            }}
+            class="w-full px-3 py-1.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+          >
+            <${Trash2} class="w-3.5 h-3.5" />
+            Delete
+          </button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/**
+ * @param {any} props
+ */
+function CommentItem({ comment, depth = 0, onReply, onDelete }) {
+  const { getRepliesForComment, addComment } = useComments();
+  const replies = getRepliesForComment(comment.id);
+  const maxDepth = 3;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showReplyForm, setShowReplyForm] = useState(false);
+
+  const formatTimestamp = (/** @type {Date} */ timestamp) => {
+    const now = new Date();
+    const diffMs = now.getTime() - timestamp.getTime();
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMinutes < 1) return "just now";
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    return timestamp.toLocaleDateString();
+  };
+
+  const handleReply = () => {
+    setShowReplyForm(true);
+  };
+
+  const handleDelete = () => {
+    onDelete(comment.id);
+  };
+
+  const isRootComment = depth === 0;
+  const hasReplies = replies.length > 0;
+
+  return html`
+    <div
+      class="${isRootComment
+        ? "border-b border-gray-100 dark:border-gray-800 pb-4 mb-4"
+        : ""}"
+    >
+      <div class="flex gap-3 ${depth > 0 ? "ml-4" : ""}">
+        <!-- Threading lines -->
+        ${depth > 0 &&
+        html`
+          <div class="flex-shrink-0 w-6 flex justify-center">
+            <div class="w-0.5 h-full bg-gray-200 dark:bg-gray-700 relative">
+              <div
+                class="absolute top-4 left-0 w-4 h-0.5 bg-gray-200 dark:bg-gray-700"
+              ></div>
+            </div>
+          </div>
+        `}
+
+        <!-- Avatar -->
+        <div class="flex-shrink-0">
+          <div
+            class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center"
+          >
+            <span class="text-white text-sm font-semibold">
+              ${comment.author
+                .split(" ")
+                .map((/** @type {string} */ n) => n[0])
+                .join("")
+                .slice(0, 2)}
+            </span>
+          </div>
+        </div>
+
+        <!-- Comment content -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-medium text-gray-900 dark:text-gray-100 text-sm">
+              ${comment.author}
+            </span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">
+              ${formatTimestamp(comment.timestamp)}
+            </span>
+            <div class="ml-auto">
+              <${CommentMenu}
+                onReply=${handleReply}
+                onDelete=${handleDelete}
+                isOpen=${isMenuOpen}
+                onToggle=${() => setIsMenuOpen(!isMenuOpen)}
+              />
+            </div>
+          </div>
+
+          <!-- Selected text context -->
+          ${comment.selectedText &&
+          html`
+            <div
+              class="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded text-xs"
+            >
+              <div class="font-code text-gray-700 dark:text-gray-300">
+                "${comment.selectedText}"
+              </div>
+            </div>
+          `}
+
+          <!-- Comment text -->
+          <div
+            class="text-gray-700 dark:text-gray-300 text-sm leading-relaxed mb-2"
+          >
+            ${comment.text}
+          </div>
+        </div>
+      </div>
+
+      <!-- Reply form -->
+      ${showReplyForm &&
+      html`
+        <div class="mt-3 ${depth > 0 ? "ml-10" : "ml-11"}">
+          <${CommentForm}
+            onCancel=${() => setShowReplyForm(false)}
+            onSubmit=${(/** @type {string} */ text) => {
+              const formState = {
+                hunkId: comment.hunkId,
+                lineIndex: comment.lineIndex,
+                parentId: comment.id,
+              };
+              addComment(formState, text);
+              setShowReplyForm(false);
+            }}
+            placeholder="Reply to ${comment.author}..."
+            parentComment=${comment}
+          />
+        </div>
+      `}
+
+      <!-- Replies -->
+      ${hasReplies &&
+      depth < maxDepth &&
+      html`
+        <div class="mt-3">
+          ${replies.map(
+            (reply) => html`
+              <${CommentItem}
+                key=${reply.id}
+                comment=${reply}
+                depth=${depth + 1}
+                onReply=${onReply}
+                onDelete=${onDelete}
+              />
+            `,
+          )}
+        </div>
+      `}
+
+      <!-- Show more replies if at max depth -->
+      ${hasReplies &&
+      depth >= maxDepth &&
+      html`
+        <div class="mt-2 ml-11">
+          <button
+            class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            View ${replies.length} more
+            ${replies.length === 1 ? "reply" : "replies"}
+          </button>
+        </div>
+      `}
+    </div>
+  `;
 }
 
 /**
@@ -67,20 +741,26 @@ function HunkRename() {
   `;
 }
 
-function HunkHeader() {
+/** @param {{ hunkId: string }} props */
+function HunkHeader({ hunkId }) {
+  const { getTotalHunkCommentsCount, addComment } = useComments();
+  const [showCommentForm, setShowCommentForm] = useState(false);
   const additions = 5;
   const deletions = 3;
-  const commentCount = 1;
+  const commentCount = getTotalHunkCommentsCount(hunkId);
   const isCollapsed = false;
   const isCompleted = false;
   const hunkIndex = 0;
   const isCopied = false;
   const onToggleComplete = () => {};
-  const onAddComment = () => {};
+  const onAddComment = () => {
+    setShowCommentForm(true);
+  };
   const onCopy = () => {};
   const onShare = () => {};
   const onToggleCollapse = () => {};
   const onRenameHunk = () => {};
+
   return html`
     <div
       class="px-4 py-3 bg-gradient-to-r from-gray-50/80 to-gray-50/40 dark:from-gray-800/60 dark:to-gray-800/30 border-b border-gray-200/50 dark:border-gray-700/50"
@@ -203,11 +883,34 @@ function HunkHeader() {
         </div>
       </div>
     </div>
+
+    <!-- Hunk comment form -->
+    ${showCommentForm &&
+    html`
+      <div
+        class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+      >
+        <${CommentForm}
+          onCancel=${() => setShowCommentForm(false)}
+          onSubmit=${(/** @type {string} */ text) => {
+            const formState = { hunkId: hunkId };
+            addComment(formState, text);
+            setShowCommentForm(false);
+          }}
+          placeholder="Comment on this hunk..."
+        />
+      </div>
+    `}
   `;
 }
 
 /** @param {any} props */
-function Line({ line }) {
+function Line({ line, hunkId, lineIndex }) {
+  const { getCommentsForLine, addComment, deleteComment } = useComments();
+  const [showCommentForm, setShowCommentForm] = useState(false);
+  const lineComments = getCommentsForLine(hunkId, lineIndex);
+  const totalComments = lineComments.length;
+
   /** @param {Number} number */
   const renderLineNumber = (number) => {
     return number
@@ -219,6 +922,7 @@ function Line({ line }) {
           >·</span
         >`;
   };
+
   /**
    * @param {any} type
    */
@@ -234,13 +938,32 @@ function Line({ line }) {
         return "transition-diff cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/50";
     }
   };
-  function handleLineClick() {}
+
+  const handleLineClick = () => {
+    setShowCommentForm(true);
+  };
+
   /**
-   * @param {any} _
+   * @param {any} type
    */
-  function getLineIcon(_) {}
-  const totalComments = 0;
-  console.log(line);
+  function getLineIcon(type) {
+    switch (type) {
+      case "ADD":
+        return html`<span
+          class="text-emerald-600 dark:text-emerald-400 font-bold"
+          >+</span
+        >`;
+      case "DELETE":
+        return html`<span class="text-red-600 dark:text-red-400 font-bold"
+          >-</span
+        >`;
+      default:
+        return html`<span class="text-gray-400 dark:text-gray-600"> </span>`;
+    }
+  }
+
+  const showLineCommentForm = showCommentForm;
+
   return html`
     <div>
       <div
@@ -266,12 +989,11 @@ function Line({ line }) {
           class="flex-1 px-3 py-1 font-code text-xs leading-relaxed whitespace-pre-wrap break-all"
         >
           ${line.content}
-          <!-- <SearchHighlight text={line.content || " "} searchQuery={searchQuery} /> -->
         </div>
 
         <div class="w-14 px-2 py-1 flex items-center justify-center gap-1">
           ${totalComments > 0 &&
-          html` <div
+          html`<div
             class="w-4 h-4 rounded-full bg-blue-500 dark:bg-blue-600 flex items-center justify-center shadow-sm"
           >
             <span class="text-xs text-white font-semibold">
@@ -281,13 +1003,66 @@ function Line({ line }) {
           <div
             class="opacity-0 group-hover:opacity-100 p-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 transition-all duration-200"
           >
-            <!-- <MessageSquare class="w-3 h-3 text-blue-500 dark:text-blue-400" /> -->
+            <${MessageSquare}
+              class="w-3 h-3 text-blue-500 dark:text-blue-400"
+            />
           </div>
         </div>
         <div
           class="absolute inset-0 opacity-0 group-hover:opacity-5 bg-blue-500 transition-opacity duration-200 pointer-events-none"
         />
       </div>
+
+      <!-- Line comment form -->
+      ${showLineCommentForm &&
+      html`
+        <div
+          class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+        >
+          <${CommentForm}
+            onCancel=${() => {
+              setShowCommentForm(false);
+            }}
+            onSubmit=${(/** @type {string} */ text) => {
+              const formState = {
+                hunkId: hunkId,
+                lineIndex: lineIndex,
+              };
+              addComment(formState, text);
+              setShowCommentForm(false);
+            }}
+            placeholder="Comment on this line..."
+          />
+        </div>
+      `}
+
+      <!-- Line comments -->
+      ${lineComments.length > 0 &&
+      html`
+        <div
+          class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+        >
+          <div class="space-y-3">
+            ${lineComments.map(
+              (
+                /** @type {Comment} */ comment,
+                /** @type {number} */ index,
+              ) => html`
+                <${CommentItem}
+                  key=${comment.id}
+                  comment=${comment}
+                  onReply=${(/** @type {Comment} */ replyToComment) => {
+                    setShowCommentForm(true);
+                  }}
+                  onDelete=${(/** @type {string} */ commentId) => {
+                    deleteComment(commentId);
+                  }}
+                />
+              `,
+            )}
+          </div>
+        </div>
+      `}
     </div>
   `;
 }
@@ -295,39 +1070,68 @@ function Line({ line }) {
 /**
  * @param {any} props
  */
-function Hunk({ hunk }) {
+function Hunk({ hunk, hunkIndex }) {
+  const hunkId = `hunk-${hunkIndex}`;
+  const { getCommentsForHunk, deleteComment } = useComments();
+  const hunkComments = getCommentsForHunk(hunkId);
+
   return html`
     <div class="dark:bg-monokai-bg transition-all duration-300">
       <!-- hunk header -->
-      <${HunkHeader} />
+      <${HunkHeader} hunkId=${hunkId} />
 
       <!-- hunk body -->
       <div
         class="font-code text-sm border-t border-gray-200/50 dark:border-monokai-border/50"
       >
         <!-- lines -->
-
         ${hunk.lines.map(
           /** @param {any} line */
-          (line) => html`<${Line} line=${line} />`,
+          (line, /** @type {number} */ lineIndex) =>
+            html`<${Line}
+              line=${line}
+              hunkId=${hunkId}
+              lineIndex=${lineIndex}
+            />`,
         )}
-        <!-- test -->
-        <!-- diffline -->
       </div>
+
+      <!-- Hunk-level comments -->
+      ${hunkComments.length > 0 &&
+      html`
+        <div
+          class="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+        >
+          <div class="space-y-3">
+            ${hunkComments.map(
+              (
+                /** @type {Comment} */ comment,
+                /** @type {number} */ index,
+              ) => html`
+                <${CommentItem}
+                  key=${comment.id}
+                  comment=${comment}
+                  onReply=${(/** @type {Comment} */ replyToComment) => {
+                    // Reply functionality handled by CommentItem internally
+                  }}
+                  onDelete=${(/** @type {string} */ commentId) => {
+                    deleteComment(commentId);
+                  }}
+                />
+              `,
+            )}
+          </div>
+        </div>
+      `}
     </div>
   `;
 }
 
 function FileHeader() {
-  const { diff, comments } = useDiff();
-  console.log(diff.value);
-  function onClick() {
-    comments.value = [...comments.value, 1];
-  }
+  const diff = useDiff();
   return html`
     <div
       class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
-      onClick=${onClick}
     >
       <div class="flex items-center justify-between mb-4">
         <div class="flex-1">
@@ -397,7 +1201,7 @@ function FileHeader() {
 }
 
 function App() {
-  const { diff } = useDiff();
+  const diff = useDiff();
   return html`
     <!-- outermost - DiffViewerDemo -->
     <div
@@ -422,7 +1226,9 @@ function App() {
             >
               ${diff.value.hunks.map(
                 /** @param {any} hunk */
-                (hunk) => html` <${Hunk} hunk=${hunk} /> `,
+                (hunk, /** @type {number} */ index) => html`
+                  <${Hunk} hunk=${hunk} hunkIndex=${index} />
+                `,
               )}
             </div>
           </div>
