@@ -9,7 +9,42 @@ const $APP = document.getElementById("app");
 if (!$APP) {
   throw new Error("unable to find #app");
 }
-const { diffPrefetch: DIFF_PREFETCH } = $APP.dataset;
+const { diffPrefetch: DIFF_PREFETCH, commentsPrefetch: COMMENTS_PREFETCH } =
+  $APP.dataset;
+
+/**
+ * @typedef {{
+ *  type: "ADD" | "DELETE" | "CONTEXT",
+ *  content: string,
+ *  line_number_old: number | null,
+ *  line_number_new: number | null
+ * }} Line
+ */
+
+/**
+ * @typedef {{
+ *  id: string | null,
+ *  name: string | null,
+ *  from_start: number,
+ *  from_count: number,
+ *  to_start: number,
+ *  to_count: number,
+ *  lines: Line[]
+ * }} Hunk
+ */
+
+/**
+ * @typedef {{
+ *  id: string,
+ *  name: string,
+ *  raw: string,
+ *  from_filename: string,
+ *  from_timestamp: Date | null,
+ *  to_filename: string,
+ *  to_timestamp: Date | null,
+ *  hunks: Hunk[]
+ * }} Diff
+ */
 
 /**
  * @typedef {{
@@ -18,12 +53,12 @@ const { diffPrefetch: DIFF_PREFETCH } = $APP.dataset;
  *  author: string,
  *  timestamp: Date,
  *  hunkId: string,
+ *  diffId?: string,
  *  lineIndex?: number,
- *  selectedText?: string,
  *  startOffset?: number,
  *  endOffset?: number,
  *  parentId?: string,
- *  replies?: Comment[]
+ *  selectedText?: string
  * }} Comment
  */
 
@@ -40,8 +75,10 @@ const { diffPrefetch: DIFF_PREFETCH } = $APP.dataset;
 
 /**
  * @typedef {{
- *  diff: import("@preact/signals").Signal<any>,
- *  comments: import("@preact/signals").Signal<Comment[]>
+ *  diff: import("@preact/signals").Signal<Diff>,
+ *  comments: import("@preact/signals").Signal<Comment[]>,
+ *  isEditing: import("@preact/signals").Signal<boolean>,
+ *  editValue: import("@preact/signals").Signal<string>
  * }} AppStateType
  */
 
@@ -52,9 +89,40 @@ function createAppState() {
   if (!DIFF_PREFETCH) {
     throw new Error("unable to load diff prefetch");
   }
-  const diff = signal(/** @type {any} */ (JSON.parse(DIFF_PREFETCH)));
-  const comments = signal(/** @type {Comment[]} */ (getSampleComments()));
-  return { diff, comments };
+  if (!COMMENTS_PREFETCH) {
+    throw new Error("unable to load comments prefetch");
+  }
+
+  const diff = signal(/** @type {Diff} */ (JSON.parse(DIFF_PREFETCH)));
+
+  // Parse and transform prefetched comments to frontend format
+  const prefetchedComments = JSON.parse(COMMENTS_PREFETCH);
+  const transformedComments = prefetchedComments.map(
+    (/** @type {any} */ comment) => {
+      // Find the hunk index by ULID to create frontend hunk-{index} format
+      const hunkIndex = diff.value.hunks.findIndex(
+        (h) => h.id === comment.hunk_id,
+      );
+      return {
+        ...comment,
+        hunkId: hunkIndex >= 0 ? `hunk-${hunkIndex}` : comment.hunk_id, // Convert to hunk-{index} for frontend
+        timestamp: new Date(comment.timestamp),
+        diffId: comment.diff_id,
+        lineIndex: comment.line_index === -1 ? undefined : comment.line_index,
+        startOffset: comment.start_offset,
+        endOffset: comment.end_offset,
+        parentId: comment.in_reply_to,
+      };
+    },
+  );
+
+  const comments = signal(/** @type {Comment[]} */ (transformedComments));
+
+  // File rename state
+  const isEditing = signal(false);
+  const editValue = signal("");
+
+  return { diff, comments, isEditing, editValue };
 }
 
 /**
@@ -69,7 +137,7 @@ function getSampleComments() {
       author: "Alice Johnson",
       timestamp: new Date("2024-12-15T10:30:00Z"),
       hunkId: "hunk-0",
-      lineIndex: 2,
+      lineIndex: 1, // 0-based index for line 2 in the UI
     },
     {
       id: "2",
@@ -77,7 +145,7 @@ function getSampleComments() {
       author: "Bob Smith",
       timestamp: new Date("2024-12-15T11:15:00Z"),
       hunkId: "hunk-0",
-      lineIndex: 5,
+      lineIndex: 1, // Same line as comment 1
       selectedText: "validateToken(token)",
     },
     {
@@ -86,7 +154,7 @@ function getSampleComments() {
       author: "Alice Johnson",
       timestamp: new Date("2024-12-15T11:20:00Z"),
       hunkId: "hunk-0",
-      lineIndex: 5,
+      lineIndex: 1, // Reply to comment 2
       parentId: "2",
     },
     {
@@ -95,6 +163,7 @@ function getSampleComments() {
       author: "Carol Davis",
       timestamp: new Date("2024-12-15T14:45:00Z"),
       hunkId: "hunk-0",
+      // No lineIndex - this is a hunk-level comment
     },
     {
       id: "5",
@@ -102,7 +171,7 @@ function getSampleComments() {
       author: "Dave Wilson",
       timestamp: new Date("2024-12-15T15:00:00Z"),
       hunkId: "hunk-0",
-      parentId: "4",
+      parentId: "4", // Reply to hunk-level comment
     },
   ];
 }
@@ -235,6 +304,24 @@ function Plus({ class: className }) {
 }
 
 /** @param {{ class: string }} props */
+function X({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="m18 6-12 12" />
+    <path d="m6 6 12 12" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
 function MoreVertical({ class: className }) {
   return html`<svg
     class="${className}"
@@ -290,6 +377,165 @@ function Trash2({ class: className }) {
   </svg>`;
 }
 
+/** @param {{ class: string }} props */
+function Check({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M20 6 9 17l-5-5" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Circle({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="12" r="10" />
+  </svg>`;
+}
+
+/**
+ * Component for renaming hunks inline
+ * @param {{ hunk: Hunk, onRename: (hunkId: string, newName: string) => Promise<void> }} props
+ */
+function HunkRename({ hunk, onRename }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const validateName = (/** @type {string} */ name) => name.trim().length > 0;
+  const isValid = () => validateName(editValue);
+
+  const handleEdit = () => {
+    setEditValue(hunk.name || hunk.id || "");
+    setIsEditing(true);
+  };
+
+  const handleSave = async () => {
+    const trimmedValue = editValue.trim();
+    if (!validateName(trimmedValue) || trimmedValue === hunk.name) {
+      setIsEditing(false);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onRename(hunk.id || "", trimmedValue);
+    } catch (error) {
+      console.error("Failed to update hunk name:", error);
+    }
+    setIsLoading(false);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(hunk.name || hunk.id || "");
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (/** @type {KeyboardEvent} */ e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancel();
+    }
+  };
+
+  const handleChange = (/** @type {Event} */ e) => {
+    const target = /** @type {HTMLInputElement} */ (e.target);
+    setEditValue(target.value);
+  };
+
+  const handleSubmit = (/** @type {Event} */ e) => {
+    e.preventDefault();
+    if (isValid()) handleSave();
+  };
+
+  if (isEditing) {
+    return html`
+      <form onSubmit=${handleSubmit} class="flex items-center gap-2">
+        <div class="flex-1 relative">
+          <input
+            type="text"
+            value=${editValue}
+            onChange=${handleChange}
+            onKeyDown=${handleKeyDown}
+            class="w-full px-2 py-1 text-sm font-code font-medium bg-white dark:bg-monokai-surface border rounded-md focus:outline-none focus:ring-2 transition-colors ${isValid()
+              ? "border-gray-300 dark:border-monokai-border focus:ring-blue-500 text-gray-900 dark:text-monokai-text"
+              : "border-red-300 dark:border-red-600 focus:ring-red-500 text-red-700 dark:text-red-400"}"
+            placeholder="Enter hunk name..."
+            disabled=${isLoading}
+            autofocus
+          />
+          ${!isValid() &&
+          html`
+            <div
+              class="absolute top-full left-0 mt-1 px-2 py-1 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded text-xs text-red-600 dark:text-red-400 whitespace-nowrap z-10"
+            >
+              Name cannot be empty
+            </div>
+          `}
+        </div>
+        <button
+          type="submit"
+          disabled=${!isValid() || editValue.trim() === hunk.name || isLoading}
+          class="p-1 rounded-md hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Save hunk name"
+          title="Save (Enter)"
+        >
+          <${Check} class="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+        </button>
+        <button
+          onClick=${handleCancel}
+          disabled=${isLoading}
+          class="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          aria-label="Cancel rename"
+          title="Cancel (Esc)"
+          type="button"
+        >
+          <${X} class="w-3 h-3 text-gray-500 dark:text-gray-400" />
+        </button>
+      </form>
+    `;
+  }
+
+  return html`
+    <div class="flex items-center gap-1 group">
+      <span
+        class="text-sm font-code font-medium text-gray-700 dark:text-monokai-text"
+      >
+        ${hunk.name || hunk.id}
+      </span>
+      <button
+        onClick=${handleEdit}
+        class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-gray-100 dark:hover:bg-monokai-elevated transition-all duration-200 hover:scale-105"
+        aria-label="Rename hunk"
+        title="Rename hunk"
+      >
+        <${Edit3}
+          class="w-3 h-3 text-gray-400 dark:text-monokai-muted hover:text-gray-600 dark:hover:text-monokai-text"
+        />
+      </button>
+    </div>
+  `;
+}
+
 const AppState = createContext(/** @type {AppStateType | null} */ (null));
 
 function useDiff() {
@@ -309,39 +555,88 @@ function useComments() {
     throw new Error("useComments must be used within AppState Provider");
   }
 
-  const { comments } = ctx;
+  const { comments, diff } = ctx;
 
-  const addComment = (
+  const addComment = async (
     /** @type {CommentFormState} */ formState,
     /** @type {string} */ text,
   ) => {
-    const newComment = {
-      id: `comment-${Date.now()}`,
-      text: text.trim(),
-      author: "Current User",
-      timestamp: new Date(),
-      hunkId: formState.hunkId,
-      lineIndex: formState.lineIndex,
-      selectedText: formState.selectedText,
-      startOffset: formState.startOffset,
-      endOffset: formState.endOffset,
-      parentId: formState.parentId,
-    };
-    comments.value = [...comments.value, newComment];
+    try {
+      // Convert hunk-{index} to actual hunk ULID
+      const hunkIndex = parseInt(formState.hunkId.replace("hunk-", ""));
+      const actualHunkId = diff.value.hunks[hunkIndex]?.id;
+
+      if (!actualHunkId) {
+        console.error("Could not find hunk ID for", formState.hunkId);
+        return;
+      }
+
+      const response = await fetch("/api/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: text.trim(),
+          author: "Current User",
+          hunk_id: actualHunkId, // Use actual hunk ULID
+          diff_id: diff.value.id,
+          line_index: formState.lineIndex ?? -1, // Use -1 for hunk-level comments
+          start_offset: formState.startOffset || 0,
+          end_offset: formState.endOffset || text.length,
+          in_reply_to: formState.parentId || null,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Add the new comment to local state with proper transformation
+        const newComment = {
+          ...result.comment,
+          hunkId: formState.hunkId, // Keep frontend hunk ID format
+          diffId: diff.value.id,
+          selectedText: formState.selectedText,
+          timestamp: new Date(result.comment.timestamp), // Convert timestamp to Date object
+          lineIndex:
+            result.comment.line_index === -1
+              ? undefined
+              : result.comment.line_index,
+          startOffset: result.comment.start_offset,
+          endOffset: result.comment.end_offset,
+          parentId: result.comment.in_reply_to,
+        };
+        comments.value = [...comments.value, newComment];
+      } else {
+        console.error("Failed to create comment:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error creating comment:", error);
+    }
   };
 
-  const deleteComment = (/** @type {string} */ commentId) => {
-    const deleteRecursive = (
-      /** @type {Comment[]} */ comments,
-      /** @type {string} */ id,
-    ) => {
-      return comments.filter((/** @type {Comment} */ comment) => {
-        if (comment.id === id) return false;
-        if (comment.parentId === id) return false;
-        return true;
+  const deleteComment = async (/** @type {string} */ commentId) => {
+    try {
+      const response = await fetch(`/api/comments/${commentId}`, {
+        method: "DELETE",
       });
-    };
-    comments.value = deleteRecursive(comments.value, commentId);
+
+      if (response.ok) {
+        // Remove comment and its replies from local state
+        const deleteRecursive = (
+          /** @type {Comment[]} */ comments,
+          /** @type {string} */ id,
+        ) => {
+          return comments.filter((/** @type {Comment} */ comment) => {
+            if (comment.id === id) return false;
+            if (comment.parentId === id) return false;
+            return true;
+          });
+        };
+        comments.value = deleteRecursive(comments.value, commentId);
+      } else {
+        console.error("Failed to delete comment:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+    }
   };
 
   const getCommentsForHunk = (/** @type {string} */ hunkId) => {
@@ -557,9 +852,11 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showReplyForm, setShowReplyForm] = useState(false);
 
-  const formatTimestamp = (/** @type {Date} */ timestamp) => {
+  const formatTimestamp = (/** @type {Date | string} */ timestamp) => {
+    // Ensure timestamp is a Date object
+    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
     const now = new Date();
-    const diffMs = now.getTime() - timestamp.getTime();
+    const diffMs = now.getTime() - date.getTime();
     const diffMinutes = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -569,7 +866,7 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
 
-    return timestamp.toLocaleDateString();
+    return date.toLocaleDateString();
   };
 
   const handleReply = () => {
@@ -717,32 +1014,8 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
 /**
  * components
  */
-function HunkRename() {
-  const hunkId = "test";
-  const handleEdit = () => {};
-  return html`
-    <div class="flex items-center gap-2 group">
-      <span
-        class="text-sm font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
-      >
-        ${hunkId}
-      </span>
-      <button
-        onClick=${handleEdit}
-        class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-gray-100 dark:hover:bg-monokai-elevated transition-all duration-200 hover:scale-105"
-        aria-label="Rename hunk"
-        title="Rename hunk"
-      >
-        <Edit3
-          class="w-3 h-3 text-gray-400 dark:text-monokai-muted hover:text-gray-600 dark:hover:text-monokai-text"
-        />
-      </button>
-    </div>
-  `;
-}
-
-/** @param {{ hunkId: string }} props */
-function HunkHeader({ hunkId }) {
+/** @param {{ hunk: Hunk, hunkId: string }} props */
+function HunkHeader({ hunk, hunkId }) {
   const { getTotalHunkCommentsCount, addComment } = useComments();
   const [showCommentForm, setShowCommentForm] = useState(false);
   const additions = 5;
@@ -759,7 +1032,34 @@ function HunkHeader({ hunkId }) {
   const onCopy = () => {};
   const onShare = () => {};
   const onToggleCollapse = () => {};
-  const onRenameHunk = () => {};
+  const diff = useDiff();
+
+  const onRenameHunk = async (
+    /** @type {string} */ hunkId,
+    /** @type {string} */ newName,
+  ) => {
+    try {
+      // Update the hunk name via API
+      const response = await fetch(`/api/hunks/${hunkId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+
+      if (response.ok) {
+        const updatedHunk = await response.json();
+        // Update the hunk in the global diff state
+        diff.value = {
+          ...diff.value,
+          hunks: diff.value.hunks.map((/** @type {Hunk} */ h) =>
+            h.id === hunkId ? { ...h, name: newName } : h,
+          ),
+        };
+      }
+    } catch (error) {
+      console.error("Failed to update hunk name:", error);
+    }
+  };
 
   return html`
     <div
@@ -776,15 +1076,11 @@ function HunkHeader({ hunkId }) {
                 <div
                   class="w-5 h-5 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-sm"
                 >
-                  <i
-                    data-lucide="check"
-                    class="w-3 h-3 text-white font-bold"
-                  ></i>
+                  <${Check} class="w-3 h-3 text-white font-bold" />
                 </div>
               `
             : html`
-                <img
-                  src="https://unpkg.com/lucide-static@latest/icons/circle.svg"
+                <${Circle}
                   class="w-5 h-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 />
               `}
@@ -794,7 +1090,7 @@ function HunkHeader({ hunkId }) {
           <div class="flex items-center justify-between">
             <div class="flex-1">
               <div class=${isCompleted ? "line-through opacity-60" : ""}>
-                <${HunkRename} hunkId=${"test"} onRename=${onRenameHunk} />
+                <${HunkRename} hunk=${hunk} onRename=${onRenameHunk} />
               </div>
               <div class="flex items-center gap-3 mt-1">
                 <span
@@ -819,7 +1115,7 @@ function HunkHeader({ hunkId }) {
                     <div
                       class="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-full border border-blue-200 dark:border-blue-700 shadow-sm"
                     >
-                      <MessageSquare class="w-3.5 h-3.5 text-blue-500" />
+                      <${MessageSquare} class="w-3.5 h-3.5 text-blue-500" />
                       <span
                         class="text-blue-600 dark:text-blue-400 text-xs font-semibold"
                         >${commentCount}</span
@@ -837,7 +1133,7 @@ function HunkHeader({ hunkId }) {
                 aria-label="Add comment to hunk"
                 title="Add comment to hunk"
               >
-                <MessageSquare
+                <${MessageSquare}
                   class="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 transition-colors"
                 />
               </button>
@@ -1078,7 +1374,7 @@ function Hunk({ hunk, hunkIndex }) {
   return html`
     <div class="dark:bg-monokai-bg transition-all duration-300">
       <!-- hunk header -->
-      <${HunkHeader} hunkId=${hunkId} />
+      <${HunkHeader} hunk=${hunk} hunkId=${hunkId} />
 
       <!-- hunk body -->
       <div
@@ -1127,6 +1423,137 @@ function Hunk({ hunk, hunkIndex }) {
   `;
 }
 
+/**
+ * FileRename component
+ */
+function FileRename() {
+  const appState = useContext(AppState);
+  if (!appState) throw new Error("FileRename must be used within AppState");
+  const { diff, isEditing, editValue } = appState;
+
+  const validateName = (/** @type {string} */ name) => name.trim().length > 0;
+  const isValid = () => validateName(editValue.value);
+
+  const handleEdit = () => {
+    editValue.value = diff.value.name || diff.value.id;
+    isEditing.value = true;
+  };
+
+  const handleSave = async () => {
+    const trimmedValue = editValue.value.trim();
+    if (!validateName(trimmedValue) || trimmedValue === diff.value.name) {
+      isEditing.value = false;
+      return;
+    }
+
+    try {
+      // Update the diff name via API
+      const response = await fetch(`/api/diffs/${diff.value.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedValue }),
+      });
+
+      if (response.ok) {
+        const updatedDiff = await response.json();
+        diff.value = updatedDiff.diff;
+      }
+    } catch (error) {
+      console.error("Failed to update diff name:", error);
+    }
+
+    isEditing.value = false;
+  };
+
+  const handleCancel = () => {
+    editValue.value = diff.value.name || diff.value.id;
+    isEditing.value = false;
+  };
+
+  const handleKeyDown = (/** @type {KeyboardEvent} */ e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancel();
+    }
+  };
+
+  const handleChange = (/** @type {Event} */ e) => {
+    const target = /** @type {HTMLInputElement} */ (e.target);
+    editValue.value = target.value;
+  };
+
+  const handleSubmit = (/** @type {Event} */ e) => {
+    e.preventDefault();
+    if (isValid()) handleSave();
+  };
+
+  if (isEditing.value) {
+    return html`
+      <form onSubmit=${handleSubmit} class="flex items-center gap-2">
+        <div class="flex-1 relative">
+          <input
+            type="text"
+            value=${editValue.value}
+            onChange=${handleChange}
+            onKeyDown=${handleKeyDown}
+            class="w-full px-2 py-1 text-lg font-code font-semibold bg-white dark:bg-monokai-surface border rounded-md focus:outline-none focus:ring-2 transition-colors ${isValid()
+              ? "border-gray-300 dark:border-monokai-border focus:ring-blue-500 text-gray-900 dark:text-monokai-text"
+              : "border-red-300 dark:border-red-600 focus:ring-red-500 text-red-700 dark:text-red-400"}"
+            placeholder="Enter file name..."
+            autofocus
+          />
+          ${!isValid() &&
+          html`
+            <div
+              class="absolute top-full left-0 mt-1 px-2 py-1 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded text-xs text-red-600 dark:text-red-400 whitespace-nowrap"
+            >
+              Name cannot be empty
+            </div>
+          `}
+        </div>
+        <button
+          type="submit"
+          disabled=${!isValid() || editValue.value.trim() === diff.value.name}
+          class="p-1.5 rounded-md hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Save file name"
+          title="Save (Enter)"
+        >
+          <${Check} class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+        </button>
+        <button
+          onClick=${handleCancel}
+          class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          aria-label="Cancel rename"
+          title="Cancel (Esc)"
+          type="button"
+        >
+          <${X} class="w-4 h-4 text-gray-500 dark:text-gray-400" />
+        </button>
+      </form>
+    `;
+  }
+
+  return html`
+    <div class="flex items-center gap-2 group">
+      <h1
+        class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
+      >
+        ${diff.value.name || diff.value.id}
+      </h1>
+      <button
+        onClick=${handleEdit}
+        class="opacity-0 group-hover:opacity-100 p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-monokai-elevated transition-all duration-200 hover:scale-105"
+        aria-label="Rename file"
+        title="Rename file"
+      >
+        <${Edit3}
+          class="w-3.5 h-3.5 text-gray-400 dark:text-monokai-muted hover:text-gray-600 dark:hover:text-monokai-text"
+        />
+      </button>
+    </div>
+  `;
+}
+
 function FileHeader() {
   const diff = useDiff();
   return html`
@@ -1136,15 +1563,7 @@ function FileHeader() {
       <div class="flex items-center justify-between mb-4">
         <div class="flex-1">
           <div class="flex items-center gap-4 mb-3">
-            <!-- filerename -->
-
-            <div class="flex items-center gap-2 group">
-              <h1
-                class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
-              >
-                my name
-              </h1>
-            </div>
+            <${FileRename} />
           </div>
           <div class="space-y-1 mb-3 text-xs font-code">
             ${diff.value.from_filename &&
@@ -1202,6 +1621,7 @@ function FileHeader() {
 
 function App() {
   const diff = useDiff();
+
   return html`
     <!-- outermost - DiffViewerDemo -->
     <div

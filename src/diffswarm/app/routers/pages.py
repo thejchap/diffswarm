@@ -7,9 +7,9 @@ from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_201_CREATED
 from ulid import ULID
 
-from diffswarm.app.database import DBDiff, DBHunk, DBLine
+from diffswarm.app.database import DBComment, DBDiff, DBHunk, DBLine
 from diffswarm.app.dependencies import SessionDependency
-from diffswarm.app.models import Diff, DiffBase
+from diffswarm.app.models import Comment, Diff, DiffBase
 from diffswarm.app.templates import TEMPLATES
 
 ROUTER = APIRouter()
@@ -33,10 +33,20 @@ def get_diff(
         .one()
     )
     diff = Diff.from_db(db_diff)
+
+    # Fetch comments for this diff
+    db_comments = (
+        session.query(DBComment)
+        .filter(DBComment.diff_id == str(diff_id))
+        .order_by(DBComment.timestamp)
+        .all()
+    )
+    comments = [Comment.from_db(db_comment) for db_comment in db_comments]
+
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/diffs/[diff_id]/index.html",
-        context={"diff": diff},
+        context={"diff": diff, "comments": comments},
     )
 
 
@@ -64,8 +74,10 @@ def create_diff(
     ],
     session: SessionDependency,
 ) -> str:
+    diff_id = str(ULID())
     db_diff = DBDiff(
-        id=str(ULID()),
+        id=diff_id,
+        name=diff_id,
         raw=body.raw,
         from_filename=body.from_filename,
         from_timestamp=body.from_timestamp.isoformat() if body.from_timestamp else None,
@@ -73,12 +85,12 @@ def create_diff(
         to_timestamp=body.to_timestamp.isoformat() if body.to_timestamp else None,
     )
     session.add(db_diff)
-    session.flush()  # Flush to get the ID assigned
-
-    # Create hunks and lines
+    session.flush()
     for hunk_data in body.hunks:
+        hunk_id = str(ULID())
         db_hunk = DBHunk(
-            id=str(ULID()),
+            id=hunk_id,
+            name=hunk_id,
             diff_id=db_diff.id,
             from_start=hunk_data.from_start,
             from_count=hunk_data.from_count,
@@ -86,8 +98,7 @@ def create_diff(
             to_count=hunk_data.to_count,
         )
         session.add(db_hunk)
-        session.flush()  # Flush to get the hunk ID
-
+        session.flush()
         for line_data in hunk_data.lines:
             db_line = DBLine(
                 id=str(ULID()),
@@ -98,7 +109,6 @@ def create_diff(
                 line_number_new=line_data.line_number_new,
             )
             session.add(db_line)
-
     session.commit()
     session.refresh(db_diff)
     res.headers["X-Diff-ID"] = db_diff.id

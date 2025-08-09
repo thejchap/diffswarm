@@ -78,6 +78,10 @@ class DBDiff(Base):
         primary_key=True,
         nullable=False,
     )
+    name: Mapped[str | None] = mapped_column(
+        Text(),
+        nullable=True,  # Will default to id if None
+    )
     raw: Mapped[str] = mapped_column(
         Text(),
         nullable=False,
@@ -113,6 +117,10 @@ class DBHunk(Base):
         String(26),
         primary_key=True,
         nullable=False,
+    )
+    name: Mapped[str | None] = mapped_column(
+        Text(),
+        nullable=True,  # Will default to id if None
     )
     diff_id: Mapped[str] = mapped_column(
         String(26),

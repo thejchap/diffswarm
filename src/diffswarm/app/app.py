@@ -10,6 +10,7 @@ from fastapi import (
     Request,
     status,
 )
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
@@ -27,6 +28,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 
 APP = FastAPI(lifespan=lifespan)
+APP.add_middleware(GZipMiddleware)
 APP.include_router(PAGES)
 APP.include_router(API, prefix="/api")
 APP.mount(

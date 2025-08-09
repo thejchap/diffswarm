@@ -55,6 +55,7 @@ class Line(BaseModel):
 class Hunk(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
     id_: ULID | None = Field(None, alias="id")
+    name: str | None = None  # Display name, defaults to id
     from_start: int = Field(..., ge=0)
     from_count: int = Field(..., ge=0)
     to_start: int = Field(..., ge=0)
@@ -85,6 +86,7 @@ class Hunk(DiffSwarmBaseModel):
         """Create a Hunk from a database model."""
         return cls(
             id=ULID.from_str(db_hunk.id),
+            name=db_hunk.name or db_hunk.id,  # Use name if available, fallback to id
             from_start=db_hunk.from_start,
             from_count=db_hunk.from_count,
             to_start=db_hunk.to_start,
@@ -326,6 +328,7 @@ class UnifiedDiffParser:
 class Diff(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
     id_: ULID = Field(..., alias="id")
+    name: str  # Display name, defaults to id
     raw: str
     from_filename: str
     from_timestamp: datetime | None = None
@@ -346,6 +349,7 @@ class Diff(DiffSwarmBaseModel):
 
         return cls(
             id=ULID.from_str(db_diff.id),
+            name=db_diff.name or str(db_diff.id),  # Default to id if name is None
             raw=db_diff.raw,
             from_filename=db_diff.from_filename,
             from_timestamp=from_timestamp,
