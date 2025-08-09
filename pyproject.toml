@@ -6,13 +6,13 @@ readme = "README.md"
 authors = [{ name = "Justin Chapman", email = "commonmodestudio@gmail.com" }]
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi[standard]==0.116",
-    "jinja2>=3.1.6",
-    "pycrdt-websocket>=0.16.0",
-    "pydantic-settings>=2.10.1",
-    "python-dateutil>=2.9.0.post0",
-    "python-ulid[pydantic]==3.0",
-    "sqlalchemy==2.0.38",
+  "fastapi[standard]==0.116",
+  "jinja2>=3.1.6",
+  "pycrdt-websocket>=0.16.0",
+  "pydantic-settings>=2.10.1",
+  "python-dateutil>=2.9.0.post0",
+  "python-ulid[pydantic]==3.0",
+  "sqlalchemy==2.0.38",
 ]
 
 [project.scripts]
@@ -36,19 +36,24 @@ max-line-length = 88
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    # may cause issues with formatter
-    "COM812",
-    # incompatible with D213
-    "D212",
-    # incompatible with D211
-    "D203",
-    # missing docstring
-    "D100",
-    "D101",
-    "D102",
-    "D103",
-    "D104",
-    "D107",
+  # may cause issues with formatter
+  "COM812",
+  # incompatible with D213
+  "D212",
+  # incompatible with D211
+  "D203",
+  # missing docstring
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D107",
+  # TODOs
+  "FIX002",
+  "FIX003",
+  "TD003",
+  "ERA001",
 ]
 fixable = ["ALL"]
 
@@ -60,9 +65,9 @@ venv = ".venv"
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.31.0",
-    "pre-commit>=4.2.0",
-    "pytest>=8.4.1",
-    "pytest-env>=1.1.5",
-    "ruff>=0.12.5",
+  "basedpyright>=1.31.0",
+  "pre-commit>=4.2.0",
+  "pytest>=8.4.1",
+  "pytest-env>=1.1.5",
+  "ruff>=0.12.5",
 ]

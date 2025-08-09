@@ -6,10 +6,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env")
-    database_url: str = "sqlite:///diffswarm-dev.sqlite3"
+    # TODO(thejchap): update after moving to file db
+    # database_url: str = "sqlite:///diffswarm-dev.sqlite3"
+    database_url: str = "sqlite://"
     database_echo: bool = True
     database_connect_check_same_thread: bool = False
-    database_poolclass: Literal["QueuePool", "StaticPool"] = "QueuePool"
+    # TODO(thejchap): update after moving to file db
+    # database_poolclass: Literal["QueuePool", "StaticPool"] = "QueuePool"
+    database_poolclass: Literal["QueuePool", "StaticPool"] = "StaticPool"
 
 
 @cache

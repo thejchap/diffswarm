@@ -1,4 +1,9 @@
-"""Shared, non-api-endpoint-specific models."""
+"""
+Shared, non-api-endpoint-specific models.
+
+These are generally the business logic/API layer models, and should
+be mapped to and from database models in `database.py`
+"""
 
 from datetime import datetime
 from enum import StrEnum
@@ -13,6 +18,8 @@ from pydantic import (
     field_validator,
 )
 from ulid import ULID
+
+from .database import DBComment, DBDiff, DBHunk, DBLine
 
 
 class DiffSwarmBaseModel(BaseModel):
@@ -34,8 +41,20 @@ class Line(BaseModel):
     line_number_old: int | None = None
     line_number_new: int | None = None
 
+    @classmethod
+    def from_db(cls, db_line: DBLine) -> Self:
+        """Create a Line from a database model."""
+        return cls(
+            type=LineType(db_line.type),
+            content=db_line.content,
+            line_number_old=db_line.line_number_old,
+            line_number_new=db_line.line_number_new,
+        )
+
 
 class Hunk(DiffSwarmBaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id_: ULID | None = Field(None, alias="id")
     from_start: int = Field(..., ge=0)
     from_count: int = Field(..., ge=0)
     to_start: int = Field(..., ge=0)
@@ -60,6 +79,18 @@ class Hunk(DiffSwarmBaseModel):
             msg = f"Expected {to_count} to-lines, got {add_count + context_count}"
             raise ValueError(msg)
         return v
+
+    @classmethod
+    def from_db(cls, db_hunk: DBHunk) -> Self:
+        """Create a Hunk from a database model."""
+        return cls(
+            id=ULID.from_str(db_hunk.id),
+            from_start=db_hunk.from_start,
+            from_count=db_hunk.from_count,
+            to_start=db_hunk.to_start,
+            to_count=db_hunk.to_count,
+            lines=[Line.from_db(db_line) for db_line in db_hunk.lines],
+        )
 
 
 class DiffBase(DiffSwarmBaseModel):
@@ -202,6 +233,7 @@ class UnifiedDiffParser:
         self.advance()  # Move past hunk header
         lines = self._parse_hunk_lines(header["from_start"], header["to_start"])
         return Hunk(
+            id=None,
             from_start=header["from_start"],
             from_count=header["from_count"],
             to_start=header["to_start"],
@@ -295,3 +327,61 @@ class Diff(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
     id_: ULID = Field(..., alias="id")
     raw: str
+    from_filename: str
+    from_timestamp: datetime | None = None
+    to_filename: str
+    to_timestamp: datetime | None = None
+    hunks: list[Hunk]
+
+    @classmethod
+    def from_db(cls, db_diff: DBDiff) -> Self:
+        """Create a Diff from a database model."""
+        from_timestamp = None
+        if db_diff.from_timestamp:
+            from_timestamp = dateutil_parser.parse(db_diff.from_timestamp)
+
+        to_timestamp = None
+        if db_diff.to_timestamp:
+            to_timestamp = dateutil_parser.parse(db_diff.to_timestamp)
+
+        return cls(
+            id=ULID.from_str(db_diff.id),
+            raw=db_diff.raw,
+            from_filename=db_diff.from_filename,
+            from_timestamp=from_timestamp,
+            to_filename=db_diff.to_filename,
+            to_timestamp=to_timestamp,
+            hunks=[Hunk.from_db(db_hunk) for db_hunk in db_diff.hunks],
+        )
+
+
+class Comment(DiffSwarmBaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id_: ULID = Field(..., alias="id")
+    text: str
+    author: str
+    timestamp: datetime
+    hunk_id: ULID
+    diff_id: ULID
+    line_index: int
+    start_offset: int
+    end_offset: int
+    in_reply_to: ULID | None = None
+
+    @classmethod
+    def from_db(cls, db_comment: DBComment) -> Self:
+        """Create a Comment from a database model."""
+        return cls(
+            id=ULID.from_str(db_comment.id),
+            text=db_comment.text,
+            author=db_comment.author,
+            timestamp=db_comment.timestamp,
+            hunk_id=ULID.from_str(db_comment.hunk_id),
+            diff_id=ULID.from_str(db_comment.diff_id),
+            line_index=db_comment.line_index,
+            start_offset=db_comment.start_offset,
+            end_offset=db_comment.end_offset,
+            in_reply_to=ULID.from_str(db_comment.in_reply_to)
+            if db_comment.in_reply_to
+            else None,
+        )

@@ -25,5 +25,9 @@ uv run basedpyright # python type checking
 uv run ruff check # linter
 uv run ruff format # formatter
 bun run tsc # frontend types
-bun run prettier . # frontend style
+bun run prettier . --check # frontend style
 ```
+
+### Rules
+
+- be sure the tests, type checkers, linters and formatters all pass to validate code changes

@@ -9,10 +9,6 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
-  - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
-    rev: v1.13.0
-    hooks:
-      - id: basedpyright
   - repo: https://github.com/JoC0de/pre-commit-prettier
     rev: v3.6.2
     hooks:
@@ -25,3 +21,8 @@ repos:
         language: system
         types: [javascript, ts, tsx, jsx]
         pass_filenames: false
+      - id: basedpyright
+        language: system
+        name: basedpyright
+        types: [python]
+        entry: uv run basedpyright
