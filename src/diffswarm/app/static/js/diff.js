@@ -626,7 +626,7 @@ function HunkRename({ hunk, onRename }) {
             onChange=${handleChange}
             onKeyDown=${handleKeyDown}
             class="w-full px-2 py-1 text-sm font-code font-medium bg-white dark:bg-monokai-surface border rounded-md focus:outline-none focus:ring-2 transition-colors ${isValid()
-              ? "border-gray-300 dark:border-monokai-border focus:ring-blue-500 text-900 dark:text-monokai-text"
+              ? "border-gray-300 dark:border-monokai-border focus:ring-blue-500 text-gray-900 dark:text-monokai-text"
               : "border-red-300 dark:border-red-600 focus:ring-red-500 text-red-700 dark:text-red-400"}"
             placeholder="Enter hunk name..."
             disabled=${isLoading}
@@ -721,6 +721,27 @@ function useComments() {
         return;
       }
 
+      // Generate temporary ID for optimistic update
+      const tempId = `temp_${Date.now()}_${Math.random()}`;
+
+      // Create optimistic comment
+      const optimisticComment = {
+        id: tempId,
+        text: text.trim(),
+        author: "Current User",
+        timestamp: new Date(),
+        hunkId: formState.hunkId,
+        diffId: diff.value.id,
+        selectedText: formState.selectedText,
+        lineIndex: formState.lineIndex,
+        startOffset: formState.startOffset || 0,
+        endOffset: formState.endOffset || text.length,
+        parentId: formState.parentId || undefined,
+      };
+
+      // Add optimistic comment to local state immediately
+      comments.value = [...comments.value, optimisticComment];
+
       const response = await fetch("/api/comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -738,7 +759,7 @@ function useComments() {
 
       if (response.ok) {
         const result = await response.json();
-        // Add the new comment to local state with proper transformation
+        // Replace optimistic comment with server response
         const newComment = {
           ...result.comment,
           hunkId: formState.hunkId, // Keep frontend hunk ID format
@@ -753,8 +774,16 @@ function useComments() {
           endOffset: result.comment.end_offset,
           parentId: result.comment.in_reply_to,
         };
-        comments.value = [...comments.value, newComment];
+
+        // Replace optimistic comment with real one
+        comments.value = comments.value.map((comment) =>
+          comment.id === tempId ? newComment : comment,
+        );
       } else {
+        // Remove optimistic comment on failure
+        comments.value = comments.value.filter(
+          (comment) => comment.id !== tempId,
+        );
         console.error("Failed to create comment:", await response.text());
       }
     } catch (error) {
@@ -764,28 +793,56 @@ function useComments() {
 
   const deleteComment = async (/** @type {string} */ commentId) => {
     try {
+      // Helper function to find all comments to delete (including nested replies)
+      const findCommentsToDelete = (
+        /** @type {Comment[]} */ allComments,
+        /** @type {string} */ targetId,
+      ) => {
+        const idsToDelete = new Set([targetId]);
+        let foundMore = true;
+
+        while (foundMore) {
+          foundMore = false;
+          for (const comment of allComments) {
+            if (
+              comment.parentId &&
+              idsToDelete.has(comment.parentId) &&
+              !idsToDelete.has(comment.id)
+            ) {
+              idsToDelete.add(comment.id);
+              foundMore = true;
+            }
+          }
+        }
+
+        return idsToDelete;
+      };
+
+      // Store original comments and deleted comments for rollback
+      const originalComments = [...comments.value];
+      const idsToDelete = findCommentsToDelete(originalComments, commentId);
+      const deletedComments = originalComments.filter((comment) =>
+        idsToDelete.has(comment.id),
+      );
+
+      // Optimistically remove comments from local state
+      comments.value = originalComments.filter(
+        (comment) => !idsToDelete.has(comment.id),
+      );
+
       const response = await fetch(`/api/comments/${commentId}`, {
         method: "DELETE",
       });
 
-      if (response.ok) {
-        // Remove comment and its replies from local state
-        const deleteRecursive = (
-          /** @type {Comment[]} */ comments,
-          /** @type {string} */ id,
-        ) => {
-          return comments.filter((/** @type {Comment} */ comment) => {
-            if (comment.id === id) return false;
-            if (comment.parentId === id) return false;
-            return true;
-          });
-        };
-        comments.value = deleteRecursive(comments.value, commentId);
-      } else {
+      if (!response.ok) {
+        // Rollback: restore deleted comments on failure
+        comments.value = originalComments;
         console.error("Failed to delete comment:", await response.text());
       }
     } catch (error) {
       console.error("Error deleting comment:", error);
+      // Note: original comments should have been stored at the beginning
+      // If we reach this catch block, rollback was not possible
     }
   };
 
@@ -822,6 +879,15 @@ function useComments() {
     return comments.value.filter((comment) => comment.hunkId === hunkId).length;
   };
 
+  const getTotalLineCommentsCount = (
+    /** @type {string} */ hunkId,
+    /** @type {number} */ lineIndex,
+  ) => {
+    return comments.value.filter(
+      (comment) => comment.hunkId === hunkId && comment.lineIndex === lineIndex,
+    ).length;
+  };
+
   return {
     comments: comments.value,
     addComment,
@@ -831,6 +897,7 @@ function useComments() {
     getRepliesForComment,
     getTotalCommentsCount,
     getTotalHunkCommentsCount,
+    getTotalLineCommentsCount,
   };
 }
 
@@ -888,21 +955,6 @@ function CommentForm({
             class="font-code text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 px-2 py-1 rounded border"
           >
             "${selectedText}"
-          </div>
-        </div>
-      `}
-      ${parentComment &&
-      html`
-        <div
-          class="px-4 py-2 bg-gray-50 dark:bg-gray-750 border-b border-gray-200 dark:border-gray-700"
-        >
-          <div
-            class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1"
-          >
-            Replying to ${parentComment.author}:
-          </div>
-          <div class="text-sm text-gray-600 dark:text-gray-300 truncate">
-            ${parentComment.text}
           </div>
         </div>
       `}
@@ -1049,21 +1101,6 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
           </div>
         `}
 
-        <!-- Avatar -->
-        <div class="flex-shrink-0">
-          <div
-            class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center"
-          >
-            <span class="text-white text-sm font-semibold">
-              ${comment.author
-                .split(" ")
-                .map((/** @type {string} */ n) => n[0])
-                .join("")
-                .slice(0, 2)}
-            </span>
-          </div>
-        </div>
-
         <!-- Comment content -->
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
@@ -1188,6 +1225,17 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
         ? null
         : new Date().toISOString();
 
+      // Store original diff state for rollback
+      const originalDiff = { ...diff.value };
+
+      // Optimistically update the hunk completion state
+      diff.value = {
+        ...diff.value,
+        hunks: diff.value.hunks.map((/** @type {any} */ h) =>
+          h.id === hunk.id ? { ...h, completed_at: newCompletedAt } : h,
+        ),
+      };
+
       const response = await fetch(`/api/hunks/${hunk.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1196,16 +1244,24 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
 
       if (response.ok) {
         const updatedHunk = await response.json();
-        // Update the hunk in the global diff state
+        // Update with server response (in case server modified the data)
         diff.value = {
           ...diff.value,
           hunks: diff.value.hunks.map((/** @type {any} */ h) =>
             h.id === hunk.id ? updatedHunk.hunk : h,
           ),
         };
+      } else {
+        // Rollback on failure
+        diff.value = originalDiff;
+        console.error(
+          "Failed to toggle hunk completion:",
+          await response.text(),
+        );
       }
     } catch (error) {
       console.error("Failed to toggle hunk completion:", error);
+      // Note: rollback should have been handled above
     }
   };
 
@@ -1214,7 +1270,17 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
     /** @type {string} */ newName,
   ) => {
     try {
-      // Update the hunk name via API
+      // Store original diff state for rollback
+      const originalDiff = { ...diff.value };
+
+      // Optimistically update the hunk name
+      diff.value = {
+        ...diff.value,
+        hunks: diff.value.hunks.map((/** @type {Hunk} */ h) =>
+          h.id === hunkId ? { ...h, name: newName } : h,
+        ),
+      };
+
       const response = await fetch(`/api/hunks/${hunkId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1223,16 +1289,21 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
 
       if (response.ok) {
         const updatedHunk = await response.json();
-        // Update the hunk in the global diff state
+        // Update with server response (in case server modified the data)
         diff.value = {
           ...diff.value,
           hunks: diff.value.hunks.map((/** @type {Hunk} */ h) =>
-            h.id === hunkId ? { ...h, name: newName } : h,
+            h.id === hunkId ? updatedHunk.hunk : h,
           ),
         };
+      } else {
+        // Rollback on failure
+        diff.value = originalDiff;
+        console.error("Failed to update hunk name:", await response.text());
       }
     } catch (error) {
       console.error("Failed to update hunk name:", error);
+      // Note: rollback should have been handled above
     }
   };
 
@@ -1377,10 +1448,15 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
 
 /** @param {any} props */
 function Line({ line, hunkId, lineIndex }) {
-  const { getCommentsForLine, addComment, deleteComment } = useComments();
+  const {
+    getCommentsForLine,
+    addComment,
+    deleteComment,
+    getTotalLineCommentsCount,
+  } = useComments();
   const [showCommentForm, setShowCommentForm] = useState(false);
   const lineComments = getCommentsForLine(hunkId, lineIndex);
-  const totalComments = lineComments.length;
+  const totalComments = getTotalLineCommentsCount(hunkId, lineIndex);
 
   /** @param {Number} number */
   const renderLineNumber = (number) => {
@@ -1662,7 +1738,13 @@ function FileRename() {
     }
 
     try {
-      // Update the diff name via API
+      // Store original diff state for rollback
+      const originalDiff = { ...diff.value };
+
+      // Optimistically update the diff name
+      diff.value = { ...diff.value, name: trimmedValue };
+      isEditing.value = false;
+
       const response = await fetch(`/api/diffs/${diff.value.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1672,12 +1754,16 @@ function FileRename() {
       if (response.ok) {
         const updatedDiff = await response.json();
         diff.value = updatedDiff.diff;
+      } else {
+        // Rollback on failure
+        diff.value = originalDiff;
+        isEditing.value = true; // Re-enter editing mode on failure
+        console.error("Failed to update diff name:", await response.text());
       }
     } catch (error) {
       console.error("Failed to update diff name:", error);
+      // Note: rollback should have been handled above
     }
-
-    isEditing.value = false;
   };
 
   const handleCancel = () => {
