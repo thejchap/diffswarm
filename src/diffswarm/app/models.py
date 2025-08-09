@@ -31,6 +31,8 @@ class LineType(StrEnum):
 class Line(BaseModel):
     type: LineType
     content: str
+    line_number_old: int | None = None
+    line_number_new: int | None = None
 
 
 class Hunk(DiffSwarmBaseModel):
@@ -83,9 +85,11 @@ class DiffBase(DiffSwarmBaseModel):
     1
     >>> len(diff.hunks[0].lines)
     2
+    >>> diff.hunks[0].lines[0]
+    Line(type=<LineType.CONTEXT: 'CONTEXT'>, content='hello', line_number_old=1, line_number_new=1)
     >>> diff.hunks[0].lines[1]
-    Line(type=<LineType.ADD: 'ADD'>, content='world')
-    """
+    Line(type=<LineType.ADD: 'ADD'>, content='world', line_number_old=None, line_number_new=2)
+    """  # noqa: E501
 
     HELLO_WORLD: ClassVar[str] = """\
 --- /dev/fd/14	2025-07-26 17:33:15
@@ -196,7 +200,7 @@ class UnifiedDiffParser:
             raise ValueError(msg)
         header = self._parse_hunk_header(self.current_line)
         self.advance()  # Move past hunk header
-        lines = self._parse_hunk_lines()
+        lines = self._parse_hunk_lines(header["from_start"], header["to_start"])
         return Hunk(
             from_start=header["from_start"],
             from_count=header["from_count"],
@@ -234,23 +238,57 @@ class UnifiedDiffParser:
         count = int(parts[1]) if len(parts) > 1 else 1
         return start, count
 
-    def _parse_hunk_lines(self) -> list[Line]:
+    def _parse_hunk_lines(self, from_start: int, to_start: int) -> list[Line]:
         """Parse lines within a hunk until next hunk or end."""
         lines: list[Line] = []
+        old_line_num = from_start
+        new_line_num = to_start
+
         while self.current_line and not self.current_line.startswith("@@"):
-            lines.append(self._parse_hunk_line(self.current_line))
+            line = self._parse_hunk_line(self.current_line, old_line_num, new_line_num)
+            lines.append(line)
+
+            # Update line numbers based on line type
+            if line.type == LineType.CONTEXT:
+                old_line_num += 1
+                new_line_num += 1
+            elif line.type == LineType.DELETE:
+                old_line_num += 1
+            elif line.type == LineType.ADD:
+                new_line_num += 1
+
             self.advance()
         return lines
 
-    def _parse_hunk_line(self, line: str) -> Line:
+    def _parse_hunk_line(self, line: str, old_line_num: int, new_line_num: int) -> Line:
         """Parse single line within hunk based on prefix."""
         if line.startswith(" "):
-            return Line(type=LineType.CONTEXT, content=line[1:])
+            return Line(
+                type=LineType.CONTEXT,
+                content=line[1:],
+                line_number_old=old_line_num,
+                line_number_new=new_line_num,
+            )
         if line.startswith("-"):
-            return Line(type=LineType.DELETE, content=line[1:])
+            return Line(
+                type=LineType.DELETE,
+                content=line[1:],
+                line_number_old=old_line_num,
+                line_number_new=None,
+            )
         if line.startswith("+"):
-            return Line(type=LineType.ADD, content=line[1:])
-        return Line(type=LineType.CONTEXT, content=line)
+            return Line(
+                type=LineType.ADD,
+                content=line[1:],
+                line_number_old=None,
+                line_number_new=new_line_num,
+            )
+        return Line(
+            type=LineType.CONTEXT,
+            content=line,
+            line_number_old=old_line_num,
+            line_number_new=new_line_num,
+        )
 
 
 class Diff(DiffSwarmBaseModel):

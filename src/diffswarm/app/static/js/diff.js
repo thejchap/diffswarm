@@ -10,15 +10,35 @@ if (!$APP) {
   throw new Error("unable to find #app");
 }
 const { diffPrefetch: DIFF_PREFETCH } = $APP.dataset;
+
+/**
+ * @typedef {{
+ *  diff: import("@preact/signals").Signal<any>,
+ *  comments: import("@preact/signals").Signal<any[]>
+ * }} AppStateType
+ */
+
+/**
+ * @returns {AppStateType}
+ */
 function createAppState() {
   if (!DIFF_PREFETCH) {
     throw new Error("unable to load diff prefetch");
   }
-  const diff = signal(JSON.parse(DIFF_PREFETCH));
-  return { diff };
+  const diff = signal(/** @type {any} */ (JSON.parse(DIFF_PREFETCH)));
+  const comments = signal([]);
+  return { diff, comments };
 }
-const DEFAULT_STATE = createAppState();
-const AppState = createContext(DEFAULT_STATE);
+
+const AppState = createContext(/** @type {AppStateType | null} */ (null));
+
+function useDiff() {
+  const ctx = useContext(AppState);
+  if (!ctx) {
+    throw new Error("useItems must be used within <ItemsProvider>");
+  }
+  return ctx;
+}
 
 /**
  * components
@@ -27,14 +47,14 @@ function HunkRename() {
   const hunkId = "test";
   const handleEdit = () => {};
   return html`
-    <div class=${"flex items-center gap-2 group ${class}"}>
+    <div class="flex items-center gap-2 group">
       <span
         class="text-sm font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
       >
         ${hunkId}
       </span>
       <button
-        onClick="${handleEdit}"
+        onClick=${handleEdit}
         class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-gray-100 dark:hover:bg-monokai-elevated transition-all duration-200 hover:scale-105"
         aria-label="Rename hunk"
         title="Rename hunk"
@@ -186,7 +206,96 @@ function HunkHeader() {
   `;
 }
 
-function Hunk() {
+/** @param {any} props */
+function Line({ line }) {
+  /** @param {Number} number */
+  const renderLineNumber = (number) => {
+    return number
+      ? html`<span
+          class="text-gray-500 dark:text-gray-400 select-none font-medium"
+          >${number}</span
+        >`
+      : html`<span class="text-gray-300 dark:text-gray-600 select-none"
+          >·</span
+        >`;
+  };
+  /**
+   * @param {any} type
+   */
+  const getLineStyles = (type) => {
+    switch (type) {
+      case "ADD":
+        return "diff-add border-l-2 transition-diff cursor-pointer";
+      case "DELETE":
+        return "diff-remove border-l-2 transition-diff cursor-pointer";
+      case "CONTEXT":
+        return "diff-context transition-diff cursor-pointer";
+      default:
+        return "transition-diff cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/50";
+    }
+  };
+  function handleLineClick() {}
+  /**
+   * @param {any} _
+   */
+  function getLineIcon(_) {}
+  const totalComments = 0;
+  console.log(line);
+  return html`
+    <div>
+      <div
+        class=${`flex ${getLineStyles(line.type)} group relative`}
+        onClick=${handleLineClick}
+      >
+        <div
+          class="w-10 px-2 py-1 text-right text-xs select-none font-code border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50"
+        >
+          ${renderLineNumber(line.line_number_old)}
+        </div>
+        <div
+          class="w-10 px-2 py-1 text-right text-xs select-none font-code border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50"
+        >
+          ${renderLineNumber(line.line_number_new)}
+        </div>
+        <div
+          class="w-6 px-1 py-1 flex items-center justify-center flex-shrink-0 bg-gray-50/30 dark:bg-gray-800/30"
+        >
+          ${getLineIcon(line.type)}
+        </div>
+        <div
+          class="flex-1 px-3 py-1 font-code text-xs leading-relaxed whitespace-pre-wrap break-all"
+        >
+          ${line.content}
+          <!-- <SearchHighlight text={line.content || " "} searchQuery={searchQuery} /> -->
+        </div>
+
+        <div class="w-14 px-2 py-1 flex items-center justify-center gap-1">
+          ${totalComments > 0 &&
+          html` <div
+            class="w-4 h-4 rounded-full bg-blue-500 dark:bg-blue-600 flex items-center justify-center shadow-sm"
+          >
+            <span class="text-xs text-white font-semibold">
+              ${totalComments}
+            </span>
+          </div>`}
+          <div
+            class="opacity-0 group-hover:opacity-100 p-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 transition-all duration-200"
+          >
+            <!-- <MessageSquare class="w-3 h-3 text-blue-500 dark:text-blue-400" /> -->
+          </div>
+        </div>
+        <div
+          class="absolute inset-0 opacity-0 group-hover:opacity-5 bg-blue-500 transition-opacity duration-200 pointer-events-none"
+        />
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * @param {any} props
+ */
+function Hunk({ hunk }) {
   return html`
     <div class="dark:bg-monokai-bg transition-all duration-300">
       <!-- hunk header -->
@@ -197,6 +306,11 @@ function Hunk() {
         class="font-code text-sm border-t border-gray-200/50 dark:border-monokai-border/50"
       >
         <!-- lines -->
+
+        ${hunk.lines.map(
+          /** @param {any} line */
+          (line) => html`<${Line} line=${line} />`,
+        )}
         <!-- test -->
         <!-- diffline -->
       </div>
@@ -205,10 +319,15 @@ function Hunk() {
 }
 
 function FileHeader() {
-  const { diff } = useContext(AppState);
+  const { diff, comments } = useDiff();
+  console.log(diff.value);
+  function onClick() {
+    comments.value = [...comments.value, 1];
+  }
   return html`
     <div
       class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
+      onClick=${onClick}
     >
       <div class="flex items-center justify-between mb-4">
         <div class="flex-1">
@@ -219,9 +338,37 @@ function FileHeader() {
               <h1
                 class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
               >
-                ${diff.value.id}
+                my name
               </h1>
             </div>
+          </div>
+          <div class="space-y-1 mb-3 text-xs font-code">
+            ${diff.value.from_filename &&
+            html`
+              <div class="flex items-center gap-2">
+                <span
+                  class="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded font-medium"
+                >
+                  −
+                </span>
+                <span class="text-gray-600 dark:text-monokai-muted"
+                  >${diff.value.from_filename}</span
+                >
+              </div>
+            `}
+            ${diff.value.to_filename &&
+            html`
+              <div class="flex items-center gap-2">
+                <span
+                  class="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded font-medium"
+                >
+                  +
+                </span>
+                <span class="text-gray-600 dark:text-monokai-muted"
+                  >${diff.value.to_filename}</span
+                >
+              </div>
+            `}
           </div>
         </div>
       </div>
@@ -250,7 +397,7 @@ function FileHeader() {
 }
 
 function App() {
-  const hunks = [1, 2, 3, 4, 5, 6, 7];
+  const { diff } = useDiff();
   return html`
     <!-- outermost - DiffViewerDemo -->
     <div
@@ -273,7 +420,10 @@ function App() {
             <div
               class="divide-y divide-gray-200/50 dark:divide-monokai-border/50"
             >
-              ${hunks.map((_hunk) => html` <${Hunk} /> `)}
+              ${diff.value.hunks.map(
+                /** @param {any} hunk */
+                (hunk) => html` <${Hunk} hunk=${hunk} /> `,
+              )}
             </div>
           </div>
         </div>
@@ -287,7 +437,7 @@ function App() {
  */
 render(
   html`
-    <${AppState.Provider} value=${DEFAULT_STATE}>
+    <${AppState.Provider} value=${createAppState()}>
       <${App} />
     <//>
   `,

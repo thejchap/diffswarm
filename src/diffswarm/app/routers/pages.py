@@ -8,7 +8,7 @@ from ulid import ULID
 
 from diffswarm.app.database import DBDiff
 from diffswarm.app.dependencies import SessionDependency
-from diffswarm.app.models import Diff, DiffBase
+from diffswarm.app.models import DiffBase
 from diffswarm.app.templates import TEMPLATES
 
 ROUTER = APIRouter()
@@ -19,15 +19,13 @@ def home() -> str:
     return "diffswarm"
 
 
-@ROUTER.get("/diffs/{diff_id}", response_class=HTMLResponse)
+@ROUTER.get("/diffs/{_diff_id}", response_class=HTMLResponse)
 def get_diff(
     request: Request,
-    diff_id: ULID,
-    session: SessionDependency,
+    _diff_id: ULID,
+    _session: SessionDependency,
 ) -> HTMLResponse:
-    diff = Diff.model_validate(
-        session.query(DBDiff.id, DBDiff.raw).filter(DBDiff.id == str(diff_id)).one()
-    )
+    diff = DiffBase.parse_str(DiffBase.HELLO_WORLD)
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/diffs/[diff_id]/index.html",
@@ -64,4 +62,4 @@ def create_diff(
     session.commit()
     session.refresh(db_diff)
     res.headers["X-Diff-ID"] = db_diff.id
-    return f"{req.url_for('get_diff', diff_id=db_diff.id)}\n"
+    return f"{req.url_for('get_diff', _diff_id=db_diff.id)}\n"
