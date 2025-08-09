@@ -103,9 +103,12 @@ class DBDiff(Base):
         nullable=True,
     )
 
-    # Relationship to hunks
+    # Relationship to hunks and comments
     hunks: Mapped[list["DBHunk"]] = relationship(
         "DBHunk", back_populates="diff", cascade="all, delete-orphan"
+    )
+    comments: Mapped[list["DBComment"]] = relationship(
+        "DBComment", back_populates="diff", cascade="all, delete-orphan"
     )
 
 
@@ -148,6 +151,9 @@ class DBHunk(Base):
     diff: Mapped["DBDiff"] = relationship("DBDiff", back_populates="hunks")
     lines: Mapped[list["DBLine"]] = relationship(
         "DBLine", back_populates="hunk", cascade="all, delete-orphan"
+    )
+    comments: Mapped[list["DBComment"]] = relationship(
+        "DBComment", back_populates="hunk", cascade="all, delete-orphan"
     )
 
 
@@ -237,12 +243,13 @@ class DBComment(Base):
     )
 
     # Relationships
-    hunk: Mapped["DBHunk"] = relationship("DBHunk")
-    diff: Mapped["DBDiff"] = relationship("DBDiff")
+    hunk: Mapped["DBHunk"] = relationship("DBHunk", back_populates="comments")
+    diff: Mapped["DBDiff"] = relationship("DBDiff", back_populates="comments")
     replies: Mapped[list["DBComment"]] = relationship(
         "DBComment",
         foreign_keys="DBComment.in_reply_to",
         back_populates="parent_comment",
+        cascade="all, delete-orphan",
     )
     parent_comment: Mapped["DBComment | None"] = relationship(
         "DBComment",

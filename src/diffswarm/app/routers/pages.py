@@ -89,24 +89,22 @@ def create_diff(
         to_timestamp=body.to_timestamp.isoformat() if body.to_timestamp else None,
     )
     session.add(db_diff)
-    session.flush()
     for hunk_data in body.hunks:
         hunk_id = str(ULID())
         db_hunk = DBHunk(
             id=hunk_id,
             name=hunk_id,
-            diff_id=db_diff.id,
+            diff_id=diff_id,
             from_start=hunk_data.from_start,
             from_count=hunk_data.from_count,
             to_start=hunk_data.to_start,
             to_count=hunk_data.to_count,
         )
         session.add(db_hunk)
-        session.flush()
         for line_data in hunk_data.lines:
             db_line = DBLine(
                 id=str(ULID()),
-                hunk_id=db_hunk.id,
+                hunk_id=hunk_id,
                 type=line_data.type.value,
                 content=line_data.content,
                 line_number_old=line_data.line_number_old,
@@ -114,6 +112,5 @@ def create_diff(
             )
             session.add(db_line)
     session.commit()
-    session.refresh(db_diff)
-    res.headers["X-Diff-ID"] = db_diff.id
-    return f"{req.url_for('get_diff', diff_id=db_diff.id)}\n"
+    res.headers["X-Diff-ID"] = diff_id
+    return f"{req.url_for('get_diff', diff_id=diff_id)}\n"

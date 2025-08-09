@@ -419,6 +419,7 @@ function HunkRename({ hunk, onRename }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const inputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
 
   const validateName = (/** @type {string} */ name) => name.trim().length > 0;
   const isValid = () => validateName(editValue);
@@ -427,6 +428,14 @@ function HunkRename({ hunk, onRename }) {
     setEditValue(hunk.name || hunk.id || "");
     setIsEditing(true);
   };
+
+  // Auto-focus and select text when entering edit mode
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
   const handleSave = async () => {
     const trimmedValue = editValue.trim();
@@ -472,6 +481,7 @@ function HunkRename({ hunk, onRename }) {
       <form onSubmit=${handleSubmit} class="flex items-center gap-2">
         <div class="flex-1 relative">
           <input
+            ref=${inputRef}
             type="text"
             value=${editValue}
             onChange=${handleChange}
@@ -481,7 +491,6 @@ function HunkRename({ hunk, onRename }) {
               : "border-red-300 dark:border-red-600 focus:ring-red-500 text-red-700 dark:text-red-400"}"
             placeholder="Enter hunk name..."
             disabled=${isLoading}
-            autofocus
           />
           ${!isValid() &&
           html`
@@ -518,7 +527,9 @@ function HunkRename({ hunk, onRename }) {
   return html`
     <div class="flex items-center gap-1 group">
       <span
-        class="text-sm font-code font-medium text-gray-700 dark:text-monokai-text"
+        onClick=${handleEdit}
+        class="text-sm font-code font-medium text-gray-700 dark:text-monokai-text cursor-pointer hover:text-gray-900 dark:hover:text-monokai-text"
+        title="Click to rename hunk"
       >
         ${hunk.name || hunk.id}
       </span>
@@ -1430,6 +1441,7 @@ function FileRename() {
   const appState = useContext(AppState);
   if (!appState) throw new Error("FileRename must be used within AppState");
   const { diff, isEditing, editValue } = appState;
+  const inputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
 
   const validateName = (/** @type {string} */ name) => name.trim().length > 0;
   const isValid = () => validateName(editValue.value);
@@ -1438,6 +1450,14 @@ function FileRename() {
     editValue.value = diff.value.name || diff.value.id;
     isEditing.value = true;
   };
+
+  // Auto-focus and select text when entering edit mode
+  useEffect(() => {
+    if (isEditing.value && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing.value]);
 
   const handleSave = async () => {
     const trimmedValue = editValue.value.trim();
@@ -1492,6 +1512,7 @@ function FileRename() {
       <form onSubmit=${handleSubmit} class="flex items-center gap-2">
         <div class="flex-1 relative">
           <input
+            ref=${inputRef}
             type="text"
             value=${editValue.value}
             onChange=${handleChange}
@@ -1500,7 +1521,6 @@ function FileRename() {
               ? "border-gray-300 dark:border-monokai-border focus:ring-blue-500 text-gray-900 dark:text-monokai-text"
               : "border-red-300 dark:border-red-600 focus:ring-red-500 text-red-700 dark:text-red-400"}"
             placeholder="Enter file name..."
-            autofocus
           />
           ${!isValid() &&
           html`
@@ -1536,7 +1556,9 @@ function FileRename() {
   return html`
     <div class="flex items-center gap-2 group">
       <h1
-        class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight"
+        onClick=${handleEdit}
+        class="text-lg font-code font-semibold text-gray-900 dark:text-monokai-text tracking-tight cursor-pointer hover:text-gray-700 dark:hover:text-monokai-text"
+        title="Click to rename file"
       >
         ${diff.value.name || diff.value.id}
       </h1>
