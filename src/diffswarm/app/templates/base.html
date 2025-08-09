@@ -33,6 +33,9 @@
       :root {
         --background: 0 0% 100%;
         --foreground: 222.2 84% 4.9%;
+        --code-foreground: 222.2 84% 2%;
+        --line-number-color: 220 9% 55%;
+
         --diff-add-bg: 142 76% 96%;
         --diff-add-border: 142 76% 36%;
         --diff-add-text: 142 76% 20%;
@@ -44,6 +47,9 @@
       .dark {
         --background: 222.2 84% 4.9%;
         --foreground: 210 40% 98%;
+        --code-foreground: 210 40% 95%;
+        --line-number-color: 220 9% 46%;
+
         --diff-add-bg: 142 76% 10%;
         --diff-add-border: 142 76% 36%;
         --diff-add-text: 142 76% 85%;
@@ -82,6 +88,18 @@
       /* Smooth transitions */
       .transition-diff {
         transition: all 0.15s ease-in-out;
+      }
+
+      .shadow-elegant {
+        box-shadow:
+          0 4px 6px -1px rgb(0 0 0 / 0.1),
+          0 2px 4px -2px rgb(0 0 0 / 0.1);
+      }
+
+      .dark .shadow-elegant {
+        box-shadow:
+          0 4px 6px -1px rgb(0 0 0 / 0.3),
+          0 2px 4px -2px rgb(0 0 0 / 0.2);
       }
     </style>
     {% block styles %}{% endblock %}

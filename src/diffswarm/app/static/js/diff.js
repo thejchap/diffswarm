@@ -75,12 +75,17 @@ const { diffPrefetch: DIFF_PREFETCH, commentsPrefetch: COMMENTS_PREFETCH } =
  */
 
 /**
+ * @typedef {"all" | "completed" | "uncompleted"} FilterType
+ */
+
+/**
  * @typedef {{
  *  diff: import("@preact/signals").Signal<Diff>,
  *  comments: import("@preact/signals").Signal<Comment[]>,
  *  isEditing: import("@preact/signals").Signal<boolean>,
  *  editValue: import("@preact/signals").Signal<string>,
- *  collapsedHunks: import("@preact/signals").Signal<Set<number>>
+ *  collapsedHunks: import("@preact/signals").Signal<Set<number>>,
+ *  currentFilter: import("@preact/signals").Signal<FilterType>
  * }} AppStateType
  */
 
@@ -127,7 +132,17 @@ function createAppState() {
   // Collapsed hunks state
   const collapsedHunks = signal(/** @type {Set<number>} */ (new Set()));
 
-  return { diff, comments, isEditing, editValue, collapsedHunks };
+  // Filter state
+  const currentFilter = signal(/** @type {FilterType} */ ("all"));
+
+  return {
+    diff,
+    comments,
+    isEditing,
+    editValue,
+    collapsedHunks,
+    currentFilter,
+  };
 }
 
 // Icon components using Lucide icons
@@ -332,6 +347,28 @@ function Trash2({ class: className }) {
 }
 
 /** @param {{ class: string }} props */
+function List({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <line x1="8" y1="6" x2="21" y2="6" />
+    <line x1="8" y1="12" x2="21" y2="12" />
+    <line x1="8" y1="18" x2="21" y2="18" />
+    <line x1="3" y1="6" x2="3.01" y2="6" />
+    <line x1="3" y1="12" x2="3.01" y2="12" />
+    <line x1="3" y1="18" x2="3.01" y2="18" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
 function Check({ class: className }) {
   return html`<svg
     class="${className}"
@@ -363,6 +400,154 @@ function Circle({ class: className }) {
   >
     <circle cx="12" cy="12" r="10" />
   </svg>`;
+}
+
+/**
+ * Hunk filter component with dropdown
+ * @param {{ currentFilter: FilterType, onFilterChange: (filter: FilterType) => void, completedCount: number, uncompletedCount: number, totalCount: number }} props
+ */
+function HunkFilter({
+  currentFilter,
+  onFilterChange,
+  completedCount,
+  uncompletedCount,
+  totalCount,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
+  const [dropdownStyle, setDropdownStyle] = useState({});
+
+  const filterOptions = [
+    {
+      value: /** @type {FilterType} */ ("all"),
+      label: "All hunks",
+      icon: List,
+      count: totalCount,
+      color: "text-gray-600 dark:text-gray-400",
+      bgColor: "bg-gray-100 dark:bg-gray-700",
+    },
+    {
+      value: /** @type {FilterType} */ ("completed"),
+      label: "Completed",
+      icon: Check,
+      count: completedCount,
+      color: "text-emerald-600 dark:text-emerald-400",
+      bgColor: "bg-emerald-100 dark:bg-emerald-900/20",
+    },
+    {
+      value: /** @type {FilterType} */ ("uncompleted"),
+      label: "Uncompleted",
+      icon: Circle,
+      count: uncompletedCount,
+      color: "text-blue-600 dark:text-blue-400",
+      bgColor: "bg-blue-100 dark:bg-blue-900/20",
+    },
+  ];
+
+  const currentOption = filterOptions.find(
+    (option) => option.value === currentFilter,
+  );
+
+  // Calculate dropdown position when opening
+  const handleToggle = () => {
+    if (!isOpen && buttonRef.current) {
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const dropdownHeight = 200; // Approximate dropdown height
+      const spaceBelow = viewportHeight - buttonRect.bottom;
+
+      let top = buttonRect.bottom + 4; // 4px margin
+      if (spaceBelow < dropdownHeight && buttonRect.top > dropdownHeight) {
+        top = buttonRect.top - dropdownHeight - 4;
+      }
+
+      setDropdownStyle({
+        position: "fixed",
+        top: `${top}px`,
+        left: `${buttonRect.left}px`,
+        width: "192px", // w-48 = 12rem = 192px
+        zIndex: 9999,
+      });
+    }
+    setIsOpen(!isOpen);
+  };
+
+  return html`
+    <div class="relative">
+      <button
+        ref=${buttonRef}
+        onClick=${handleToggle}
+        class="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        aria-label="Filter hunks"
+      >
+        ${currentOption &&
+        html`
+          <${currentOption.icon} class="w-3.5 h-3.5" />
+          <span>${currentOption.label}</span>
+          <span
+            class="${currentOption.bgColor} ${currentOption.color} px-1.5 py-0.5 rounded-full text-xs font-semibold"
+          >
+            ${currentOption.count}
+          </span>
+        `}
+        <svg
+          class="${`w-3 h-3 transition-transform ${isOpen ? "rotate-180" : ""}`}"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+
+      ${isOpen &&
+      html`
+        <!-- Backdrop -->
+        <div class="fixed inset-0 z-10" onClick=${() => setIsOpen(false)} />
+
+        <!-- Dropdown -->
+        <div
+          style=${dropdownStyle}
+          class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-elegant overflow-hidden"
+        >
+          ${filterOptions.map(
+            (option) => html`
+              <button
+                key=${option.value}
+                onClick=${() => {
+                  onFilterChange(option.value);
+                  setIsOpen(false);
+                }}
+                class="${`w-full flex items-center gap-3 px-4 py-3 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                  currentFilter === option.value
+                    ? "bg-blue-50 dark:bg-blue-900/20"
+                    : ""
+                }`}"
+              >
+                <${option.icon} class="${`w-3.5 h-3.5 ${option.color}`}" />
+                <span
+                  class="flex-1 font-medium text-gray-900 dark:text-gray-100"
+                  >${option.label}</span
+                >
+                <span
+                  class="${`${option.bgColor} ${option.color} px-1.5 py-0.5 rounded-full text-xs font-semibold`}"
+                >
+                  ${option.count}
+                </span>
+                ${currentFilter === option.value &&
+                html`<div class="w-2 h-2 rounded-full bg-blue-500" />`}
+              </button>
+            `,
+          )}
+        </div>
+      `}
+    </div>
+  `;
 }
 
 /**
@@ -744,7 +929,7 @@ function CommentForm({
             <button
               type="button"
               onClick=${onCancel}
-              class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 transition-colors"
+              class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -1091,12 +1276,12 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                 </span>
                 <div class="flex items-center gap-2 text-xs">
                   <span
-                    class="text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded"
+                    class="add-indicator font-semibold px-1.5 py-0.5 rounded"
                   >
                     +${additions}
                   </span>
                   <span
-                    class="text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded"
+                    class="remove-indicator font-semibold px-1.5 py-0.5 rounded"
                   >
                     -${deletions}
                   </span>
@@ -1200,13 +1385,8 @@ function Line({ line, hunkId, lineIndex }) {
   /** @param {Number} number */
   const renderLineNumber = (number) => {
     return number
-      ? html`<span
-          class="text-gray-500 dark:text-gray-400 select-none font-medium"
-          >${number}</span
-        >`
-      : html`<span class="text-gray-300 dark:text-gray-600 select-none"
-          >·</span
-        >`;
+      ? html`<span class="line-number">${number}</span>`
+      : html`<span class="line-number opacity-50">·</span>`;
   };
 
   /**
@@ -1221,7 +1401,7 @@ function Line({ line, hunkId, lineIndex }) {
       case "CONTEXT":
         return "diff-context transition-diff cursor-pointer";
       default:
-        return "transition-diff cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/50";
+        return "diff-context transition-diff cursor-pointer";
     }
   };
 
@@ -1236,11 +1416,14 @@ function Line({ line, hunkId, lineIndex }) {
     switch (type) {
       case "ADD":
         return html`<span
-          class="text-emerald-600 dark:text-emerald-400 font-bold"
+          class="font-bold"
+          style="color: hsl(var(--diff-add-border))"
           >+</span
         >`;
       case "DELETE":
-        return html`<span class="text-red-600 dark:text-red-400 font-bold"
+        return html`<span
+          class="font-bold"
+          style="color: hsl(var(--diff-remove-border))"
           >-</span
         >`;
       default:
@@ -1257,12 +1440,12 @@ function Line({ line, hunkId, lineIndex }) {
         onClick=${handleLineClick}
       >
         <div
-          class="w-10 px-2 py-1 text-right text-xs select-none font-code border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50"
+          class="w-10 px-2 py-1 text-right text-xs font-code border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50"
         >
           ${renderLineNumber(line.line_number_old)}
         </div>
         <div
-          class="w-10 px-2 py-1 text-right text-xs select-none font-code border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50"
+          class="w-10 px-2 py-1 text-right text-xs font-code border-r border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50"
         >
           ${renderLineNumber(line.line_number_new)}
         </div>
@@ -1592,6 +1775,7 @@ function FileHeader() {
     (hunk) => hunk.completed_at != null,
   ).length;
   const totalCount = diff.value.hunks.length;
+  const uncompletedCount = totalCount - completedCount;
   const isAllCompleted = totalCount > 0 && completedCount === totalCount;
   const totalAdditions = diff.value.hunks.reduce(
     (sum, hunk) =>
@@ -1604,25 +1788,43 @@ function FileHeader() {
     0,
   );
 
-  // Calculate if all hunks are collapsed
-  const allHunksCollapsed =
-    diff.value.hunks.length > 0 &&
-    diff.value.hunks.every((_, index) =>
-      appState.collapsedHunks.value.has(index),
-    );
+  // Filter hunks for bulk operations based on current filter
+  const visibleHunks = diff.value.hunks.filter((hunk) => {
+    const isCompleted = hunk.completed_at != null;
+    switch (appState.currentFilter.value) {
+      case "completed":
+        return isCompleted;
+      case "uncompleted":
+        return !isCompleted;
+      case "all":
+      default:
+        return true;
+    }
+  });
 
-  // Toggle all hunks expand/collapse
+  // Calculate if all visible hunks are collapsed
+  const allVisibleHunksCollapsed =
+    visibleHunks.length > 0 &&
+    visibleHunks.every((hunk) => {
+      const originalIndex = diff.value.hunks.findIndex((h) => h.id === hunk.id);
+      return appState.collapsedHunks.value.has(originalIndex);
+    });
+
+  // Toggle all visible hunks expand/collapse
   const toggleAllHunks = () => {
     const newCollapsed = new Set(appState.collapsedHunks.value);
+    const visibleHunkIndices = visibleHunks.map((hunk) =>
+      diff.value.hunks.findIndex((h) => h.id === hunk.id),
+    );
 
-    if (allHunksCollapsed) {
-      // Expand all hunks
-      diff.value.hunks.forEach((_, index) => {
+    if (allVisibleHunksCollapsed) {
+      // Expand all visible hunks
+      visibleHunkIndices.forEach((index) => {
         newCollapsed.delete(index);
       });
     } else {
-      // Collapse all hunks
-      diff.value.hunks.forEach((_, index) => {
+      // Collapse all visible hunks
+      visibleHunkIndices.forEach((index) => {
         newCollapsed.add(index);
       });
     }
@@ -1697,12 +1899,12 @@ function FileHeader() {
             </div>
             <div class="flex items-center gap-2">
               <span
-                class="text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full"
+                class="add-indicator font-semibold px-2 py-0.5 rounded-full"
               >
                 +${totalAdditions}
               </span>
               <span
-                class="text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full"
+                class="remove-indicator font-semibold px-2 py-0.5 rounded-full"
               >
                 -${totalDeletions}
               </span>
@@ -1715,14 +1917,14 @@ function FileHeader() {
           <button
             onClick=${toggleAllHunks}
             class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm"
-            aria-label=${allHunksCollapsed
+            aria-label=${allVisibleHunksCollapsed
               ? "Expand all hunks"
               : "Collapse all hunks"}
-            title=${allHunksCollapsed
+            title=${allVisibleHunksCollapsed
               ? "Expand all hunks"
               : "Collapse all hunks"}
           >
-            ${allHunksCollapsed
+            ${allVisibleHunksCollapsed
               ? html`
                   <${ChevronRight}
                     class="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors"
@@ -1752,7 +1954,15 @@ function FileHeader() {
             </div>
           </div>
         </div>
-        <!-- <HunkFilter /> -->
+        <${HunkFilter}
+          currentFilter=${appState.currentFilter.value}
+          onFilterChange=${(/** @type {FilterType} */ filter) => {
+            appState.currentFilter.value = filter;
+          }}
+          completedCount=${completedCount}
+          uncompletedCount=${uncompletedCount}
+          totalCount=${totalCount}
+        />
       </div>
 
       <!-- next -->
@@ -1762,12 +1972,27 @@ function FileHeader() {
 
 function App() {
   const diff = useDiff();
+  const appState = useContext(AppState);
+  if (!appState) throw new Error("App must be used within AppState");
+
+  // Filter hunks based on current filter
+  const filteredHunks = diff.value.hunks.filter((hunk, index) => {
+    const isCompleted = hunk.completed_at != null;
+
+    switch (appState.currentFilter.value) {
+      case "completed":
+        return isCompleted;
+      case "uncompleted":
+        return !isCompleted;
+      case "all":
+      default:
+        return true;
+    }
+  });
 
   return html`
     <!-- outermost - DiffViewerDemo -->
-    <div
-      class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-monokai-bg dark:via-monokai-bg dark:to-monokai-surface py-8"
-    >
+    <div class="min-h-screen bg-gray-50 dark:bg-monokai-bg py-8">
       <!-- DiffViewer  -->
       <div class="max-w-6xl mx-auto">
         <!--  main content, original header  -->
@@ -1785,12 +2010,34 @@ function App() {
             <div
               class="divide-y divide-gray-200/50 dark:divide-monokai-border/50"
             >
-              ${diff.value.hunks.map(
-                /** @param {any} hunk */
-                (hunk, /** @type {number} */ index) => html`
-                  <${Hunk} hunk=${hunk} hunkIndex=${index} />
-                `,
-              )}
+              ${filteredHunks.length === 0
+                ? html`
+                    <div class="p-8 text-center">
+                      <div class="text-gray-500 dark:text-monokai-muted">
+                        <div class="text-lg font-medium mb-2">
+                          No hunks match the current filter
+                        </div>
+                        <div class="text-sm">
+                          ${appState.currentFilter.value === "completed" &&
+                          "No hunks have been completed yet."}
+                          ${appState.currentFilter.value === "uncompleted" &&
+                          "All hunks have been completed!"}
+                        </div>
+                      </div>
+                    </div>
+                  `
+                : filteredHunks.map(
+                    /** @param {any} hunk */
+                    (hunk) => {
+                      // Find the original index for collapsed state management
+                      const originalIndex = diff.value.hunks.findIndex(
+                        (h) => h.id === hunk.id,
+                      );
+                      return html`
+                        <${Hunk} hunk=${hunk} hunkIndex=${originalIndex} />
+                      `;
+                    },
+                  )}
             </div>
           </div>
         </div>
