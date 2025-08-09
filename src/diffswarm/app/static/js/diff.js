@@ -29,6 +29,7 @@ const { diffPrefetch: DIFF_PREFETCH, commentsPrefetch: COMMENTS_PREFETCH } =
  *  from_count: number,
  *  to_start: number,
  *  to_count: number,
+ *  completed_at: string | null,
  *  lines: Line[]
  * }} Hunk
  */
@@ -127,57 +128,6 @@ function createAppState() {
   const collapsedHunks = signal(/** @type {Set<number>} */ (new Set()));
 
   return { diff, comments, isEditing, editValue, collapsedHunks };
-}
-
-/**
- * Sample comment data for testing
- * @returns {Comment[]}
- */
-function getSampleComments() {
-  return [
-    {
-      id: "1",
-      text: "This looks good! Nice implementation of the authentication logic.",
-      author: "Alice Johnson",
-      timestamp: new Date("2024-12-15T10:30:00Z"),
-      hunkId: "hunk-0",
-      lineIndex: 1, // 0-based index for line 2 in the UI
-    },
-    {
-      id: "2",
-      text: "Should we add error handling for the edge case where the token expires?",
-      author: "Bob Smith",
-      timestamp: new Date("2024-12-15T11:15:00Z"),
-      hunkId: "hunk-0",
-      lineIndex: 1, // Same line as comment 1
-      selectedText: "validateToken(token)",
-    },
-    {
-      id: "3",
-      text: "Good point! I'll add that in the next commit.",
-      author: "Alice Johnson",
-      timestamp: new Date("2024-12-15T11:20:00Z"),
-      hunkId: "hunk-0",
-      lineIndex: 1, // Reply to comment 2
-      parentId: "2",
-    },
-    {
-      id: "4",
-      text: "Overall this hunk looks solid. The refactor makes the code much cleaner.",
-      author: "Carol Davis",
-      timestamp: new Date("2024-12-15T14:45:00Z"),
-      hunkId: "hunk-0",
-      // No lineIndex - this is a hunk-level comment
-    },
-    {
-      id: "5",
-      text: "Agreed! Much more readable now.",
-      author: "Dave Wilson",
-      timestamp: new Date("2024-12-15T15:00:00Z"),
-      hunkId: "hunk-0",
-      parentId: "4", // Reply to hunk-level comment
-    },
-  ];
 }
 
 // Icon components using Lucide icons
@@ -1033,19 +983,46 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
 function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
   const { getTotalHunkCommentsCount, addComment } = useComments();
   const [showCommentForm, setShowCommentForm] = useState(false);
-  const additions = 5;
-  const deletions = 3;
+  const additions = hunk.lines.filter((line) => line.type === "ADD").length;
+  const deletions = hunk.lines.filter((line) => line.type === "DELETE").length;
   const commentCount = getTotalHunkCommentsCount(hunkId);
-  const isCompleted = false;
+  const isCompleted = hunk.completed_at != null;
   const hunkIndex = 0;
   const isCopied = false;
-  const onToggleComplete = () => {};
   const onAddComment = () => {
     setShowCommentForm(true);
   };
   const onCopy = () => {};
   const onShare = () => {};
   const diff = useDiff();
+
+  const onToggleComplete = async () => {
+    try {
+      // Calculate the new completion state
+      const newCompletedAt = hunk.completed_at
+        ? null
+        : new Date().toISOString();
+
+      const response = await fetch(`/api/hunks/${hunk.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed_at: newCompletedAt }),
+      });
+
+      if (response.ok) {
+        const updatedHunk = await response.json();
+        // Update the hunk in the global diff state
+        diff.value = {
+          ...diff.value,
+          hunks: diff.value.hunks.map((/** @type {any} */ h) =>
+            h.id === hunk.id ? updatedHunk.hunk : h,
+          ),
+        };
+      }
+    } catch (error) {
+      console.error("Failed to toggle hunk completion:", error);
+    }
+  };
 
   const onRenameHunk = async (
     /** @type {string} */ hunkId,
@@ -1387,6 +1364,7 @@ function Hunk({ hunk, hunkIndex }) {
   if (!appState) throw new Error("Hunk must be used within AppState");
 
   const isCollapsed = appState.collapsedHunks.value.has(hunkIndex);
+  const isCompleted = hunk.completed_at != null;
 
   const handleToggleCollapse = () => {
     const newCollapsed = new Set(appState.collapsedHunks.value);
@@ -1399,7 +1377,11 @@ function Hunk({ hunk, hunkIndex }) {
   };
 
   return html`
-    <div class="dark:bg-monokai-bg transition-all duration-300">
+    <div
+      class="dark:bg-monokai-bg transition-all duration-300 ${isCompleted
+        ? "opacity-75"
+        : ""}"
+    >
       <!-- hunk header -->
       <${HunkHeader}
         hunk=${hunk}
@@ -1605,6 +1587,23 @@ function FileHeader() {
   const appState = useContext(AppState);
   if (!appState) throw new Error("FileHeader must be used within AppState");
 
+  // Calculate completion statistics
+  const completedCount = diff.value.hunks.filter(
+    (hunk) => hunk.completed_at != null,
+  ).length;
+  const totalCount = diff.value.hunks.length;
+  const isAllCompleted = totalCount > 0 && completedCount === totalCount;
+  const totalAdditions = diff.value.hunks.reduce(
+    (sum, hunk) =>
+      sum + hunk.lines.filter((line) => line.type === "ADD").length,
+    0,
+  );
+  const totalDeletions = diff.value.hunks.reduce(
+    (sum, hunk) =>
+      sum + hunk.lines.filter((line) => line.type === "DELETE").length,
+    0,
+  );
+
   // Calculate if all hunks are collapsed
   const allHunksCollapsed =
     diff.value.hunks.length > 0 &&
@@ -1630,6 +1629,7 @@ function FileHeader() {
 
     appState.collapsedHunks.value = newCollapsed;
   };
+
   return html`
     <div
       class="px-4 py-4 border-b border-gray-200 dark:border-monokai-border bg-gradient-to-r from-white to-gray-50/50 dark:from-monokai-bg dark:to-monokai-surface/50"
@@ -1666,6 +1666,47 @@ function FileHeader() {
                 >
               </div>
             `}
+          </div>
+
+          <!-- Completion statistics -->
+          <div class="flex items-center gap-4 text-xs">
+            <div class="flex items-center gap-2">
+              ${isAllCompleted
+                ? html`
+                    <div
+                      class="w-4 h-4 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-sm transition-all duration-500"
+                    >
+                      <${Check} class="w-2.5 h-2.5 text-white font-bold" />
+                    </div>
+                  `
+                : html`
+                    <div
+                      class="w-4 h-4 rounded-full bg-gray-200 dark:bg-monokai-elevated flex items-center justify-center shadow-inner"
+                    >
+                      <div
+                        class="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 transition-all duration-500 shadow-sm"
+                        style="transform: scale(${totalCount > 0
+                          ? completedCount / totalCount
+                          : 0})"
+                      />
+                    </div>
+                  `}
+              <span class="text-gray-600 dark:text-monokai-muted">
+                ${completedCount} of ${totalCount} completed
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full"
+              >
+                +${totalAdditions}
+              </span>
+              <span
+                class="text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full"
+              >
+                -${totalDeletions}
+              </span>
+            </div>
           </div>
         </div>
 

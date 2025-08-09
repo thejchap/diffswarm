@@ -60,7 +60,18 @@ class Hunk(DiffSwarmBaseModel):
     from_count: int = Field(..., ge=0)
     to_start: int = Field(..., ge=0)
     to_count: int = Field(..., ge=0)
+    completed_at: datetime | None = None
     lines: list[Line]
+
+    @property
+    def additions(self) -> int:
+        """Number of addition lines in this hunk."""
+        return sum(1 for line in self.lines if line.type == LineType.ADD)
+
+    @property
+    def deletions(self) -> int:
+        """Number of deletion lines in this hunk."""
+        return sum(1 for line in self.lines if line.type == LineType.DELETE)
 
     @field_validator("lines")
     @classmethod
@@ -73,6 +84,7 @@ class Hunk(DiffSwarmBaseModel):
         add_count = sum(1 for line in v if line.type == LineType.ADD)
         context_count = sum(1 for line in v if line.type == LineType.CONTEXT)
         del_context_count = delete_count + context_count
+
         if from_count != del_context_count:
             msg = f"Expected {from_count} from-lines, got {del_context_count}"
             raise ValueError(msg)
@@ -91,6 +103,7 @@ class Hunk(DiffSwarmBaseModel):
             from_count=db_hunk.from_count,
             to_start=db_hunk.to_start,
             to_count=db_hunk.to_count,
+            completed_at=db_hunk.completed_at,
             lines=[Line.from_db(db_line) for db_line in db_hunk.lines],
         )
 
@@ -233,7 +246,12 @@ class UnifiedDiffParser:
             raise ValueError(msg)
         header = self._parse_hunk_header(self.current_line)
         self.advance()  # Move past hunk header
-        lines = self._parse_hunk_lines(header["from_start"], header["to_start"])
+        lines = self._parse_hunk_lines(
+            header["from_start"],
+            header["to_start"],
+            header["from_count"],
+            header["to_count"],
+        )
         return Hunk(
             id=None,
             from_start=header["from_start"],
@@ -272,14 +290,52 @@ class UnifiedDiffParser:
         count = int(parts[1]) if len(parts) > 1 else 1
         return start, count
 
-    def _parse_hunk_lines(self, from_start: int, to_start: int) -> list[Line]:
+    def _parse_hunk_lines(
+        self, from_start: int, to_start: int, from_count: int, to_count: int
+    ) -> list[Line]:
         """Parse lines within a hunk until next hunk or end."""
         lines: list[Line] = []
         old_line_num = from_start
         new_line_num = to_start
 
+        # Track processed line counts to respect hunk header limits
+        # from_count = DELETE + CONTEXT lines
+        # to_count = ADD + CONTEXT lines
+        delete_count = 0
+        add_count = 0
+        context_count = 0
+
         while self.current_line and not self.current_line.startswith("@@"):
+            # Skip "\ No newline at end of file" markers
+            if self.current_line.startswith("\\ "):
+                self.advance()
+                continue
+
             line = self._parse_hunk_line(self.current_line, old_line_num, new_line_num)
+
+            # Count the line type before adding to check limits
+            temp_delete_count = delete_count
+            temp_add_count = add_count
+            temp_context_count = context_count
+
+            if line.type == LineType.CONTEXT:
+                temp_context_count += 1
+            elif line.type == LineType.DELETE:
+                temp_delete_count += 1
+            elif line.type == LineType.ADD:
+                temp_add_count += 1
+
+            # Check if adding this line would exceed the limits
+            from_lines = temp_delete_count + temp_context_count
+            to_lines = temp_add_count + temp_context_count
+
+            if from_lines > from_count or to_lines > to_count:
+                break
+
+            # Update the actual counts and add the line
+            delete_count = temp_delete_count
+            add_count = temp_add_count
+            context_count = temp_context_count
             lines.append(line)
 
             # Update line numbers based on line type
@@ -335,6 +391,32 @@ class Diff(DiffSwarmBaseModel):
     to_filename: str
     to_timestamp: datetime | None = None
     hunks: list[Hunk]
+
+    @property
+    def completed_count(self) -> int:
+        """Number of completed hunks."""
+        return sum(1 for hunk in self.hunks if hunk.completed_at is not None)
+
+    @property
+    def total_count(self) -> int:
+        """Total number of hunks."""
+        return len(self.hunks)
+
+    @property
+    def total_additions(self) -> int:
+        """Total number of addition lines across all hunks."""
+        return sum(
+            sum(1 for line in hunk.lines if line.type == LineType.ADD)
+            for hunk in self.hunks
+        )
+
+    @property
+    def total_deletions(self) -> int:
+        """Total number of deletion lines across all hunks."""
+        return sum(
+            sum(1 for line in hunk.lines if line.type == LineType.DELETE)
+            for hunk in self.hunks
+        )
 
     @classmethod
     def from_db(cls, db_diff: DBDiff) -> Self:

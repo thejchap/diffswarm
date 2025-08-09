@@ -102,7 +102,6 @@ class DBDiff(Base):
         Text(),
         nullable=True,
     )
-
     # Relationship to hunks and comments
     hunks: Mapped[list["DBHunk"]] = relationship(
         "DBHunk", back_populates="diff", cascade="all, delete-orphan"
@@ -145,6 +144,10 @@ class DBHunk(Base):
     to_count: Mapped[int] = mapped_column(
         Integer(),
         nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(),
+        nullable=True,
     )
 
     # Relationships

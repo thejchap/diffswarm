@@ -1,4 +1,6 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -499,3 +501,54 @@ class TestAPI:
         # Verify reply comment is cascade deleted (trying to delete should return 404)
         res = client.delete(f"/api/comments/{reply_comment_id}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_toggle_hunk_completion(self, client: TestClient) -> None:
+        """Test toggling hunk completion status using PUT endpoint."""
+        # Create a diff
+        res = client.post(
+            "/",
+            content=DiffBase.HELLO_WORLD,
+            headers={"Content-Type": "text/plain"},
+        )
+        assert res.status_code == status.HTTP_201_CREATED
+        diff_id = res.headers["X-Diff-ID"]
+
+        # Get hunk ID
+        res = client.get(f"/api/diffs/{diff_id}")
+        diff = res.json()["diff"]
+        hunk_id = diff["hunks"][0]["id"]
+
+        # Initially hunk should not be completed
+        assert diff["hunks"][0]["completed_at"] is None
+
+        # Mark as complete using PUT endpoint
+        completed_at = datetime.now(UTC).isoformat()
+        res = client.put(f"/api/hunks/{hunk_id}", json={"completed_at": completed_at})
+        assert res.status_code == status.HTTP_200_OK
+        hunk = res.json()["hunk"]
+        assert hunk["completed_at"] is not None
+
+        # Mark as incomplete using PUT endpoint
+        res = client.put(f"/api/hunks/{hunk_id}", json={"completed_at": None})
+        assert res.status_code == status.HTTP_200_OK
+        hunk = res.json()["hunk"]
+        assert hunk["completed_at"] is None
+
+    def test_toggle_hunk_completion_not_found(self, client: TestClient) -> None:
+        """Test toggling completion for non-existent hunk returns 404."""
+        fake_hunk_id = str(ULID())
+        completed_at = datetime.now(UTC).isoformat()
+        res = client.put(
+            f"/api/hunks/{fake_hunk_id}", json={"completed_at": completed_at}
+        )
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+        body = res.json()
+        assert body["detail"] == "Hunk not found"
+
+
+class TestParser:
+    def test_1(self) -> None:
+        with Path.open(Path(__file__).parent / "fixtures/1.diff") as f:
+            diff = f.read()
+
+        assert DiffBase.parse_str(diff)

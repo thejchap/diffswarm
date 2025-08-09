@@ -39,7 +39,8 @@ class UpdateDiffResponse(DiffSwarmBaseModel):
 
 
 class UpdateHunkRequest(DiffSwarmBaseModel):
-    name: str
+    name: str | None = None
+    completed_at: datetime | None = None
 
 
 class UpdateHunkResponse(DiffSwarmBaseModel):
@@ -102,6 +103,7 @@ def update_diff(
         session.query(DBDiff)
         .options(selectinload(DBDiff.hunks).selectinload(DBHunk.lines))
         .filter(DBDiff.id == str(diff_id))
+        .with_for_update()
         .first()
     )
     if not db_diff:
@@ -125,6 +127,7 @@ def update_hunk(
         session.query(DBHunk)
         .options(selectinload(DBHunk.lines))
         .filter(DBHunk.id == str(hunk_id))
+        .with_for_update()
         .first()
     )
     if not db_hunk:
@@ -132,7 +135,12 @@ def update_hunk(
             status_code=status.HTTP_404_NOT_FOUND, detail="Hunk not found"
         )
 
-    db_hunk.name = request.name
+    # Update fields if provided
+    if request.name is not None:
+        db_hunk.name = request.name
+    if "completed_at" in request.model_fields_set:
+        db_hunk.completed_at = request.completed_at
+
     session.commit()
     session.refresh(db_hunk)
 

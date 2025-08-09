@@ -1,0 +1,39 @@
+--- /Users/justinchapman/Desktop/old.txt	2025-08-09 15:05:43
++++ /Users/justinchapman/Desktop/new.txt	2025-08-09 15:06:04
+@@ -1,15 +1,13 @@
+ INFO:sqlalchemy.engine.Engine:SELECT line.id AS line_id, line.hunk_id AS line_hunk_id, line.type AS line_type, line.content AS line_content, line.line_number_old AS line_line_number_old, line.line_number_new AS line_line_number_new
+-FROM line
++FROM ine
+ WHERE ? = line.hunk_id
+ 2025-08-09 15:05:20,136 INFO sqlalchemy.engine.Engine [cached since 55.34s ago] ('01K283GBJ27T109E6JBRS72KCZ',)
+ INFO:sqlalchemy.engine.Engine:[cached since 55.34s ago] ('01K283GBJ27T109E6JBRS72KCZ',)
+-2025-08-09 15:05:20,138 INFO sqlalchemy.engine.Engine ROLLBACK
+ INFO:sqlalchemy.engine.Engine:ROLLBACK
+       INFO   127.0.0.1:59817 - "PUT /api/hunks/01K283GBJ27T109E6JBRS72KCZ HTTP/1.1" 200
+ 2025-08-09 15:05:20,991 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+ INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+ 2025-08-09 15:05:20,991 INFO sqlalchemy.engine.Engine SELECT hunk.id AS hunk_id, hunk.name AS hunk_name, hunk.diff_id AS hunk_diff_id, hunk.from_start AS hunk_from_start, hunk.from_count AS hunk_from_count, hunk.to_start AS hunk_to_start, hunk.to_count AS hunk_to_count, hunk.completed_at AS hunk_completed_at
+-FROM hunk
+ WHERE hunk.id = ?
+  LIMIT ? OFFSET ?
+ INFO:sqlalchemy.engine.Engine:SELECT hunk.id AS hunk_id, hunk.name AS hunk_name, hunk.diff_id AS hunk_diff_id, hunk.from_start AS hunk_from_start, hunk.from_count AS hunk_from_count, hunk.to_start AS hunk_to_start, hunk.to_count AS hunk_to_count, hunk.completed_at AS hunk_completed_at
+@@ -41,14 +39,14 @@
+ FROM hunk
+ WHERE hunk.id = ?
+ 2025-08-09 15:05:20,997 INFO sqlalchemy.engine.Engine [cached since 56.21s ago] ('01K283GBJ27T109E6JBRS72KCZ',)
+-INFO:sqlalchemy.engine.Engine:[cached since 56.21s ago] ('01K283GBJ27T109E6JBRS72KCZ',)
++INF:sqlalchemy.engine.Engine:[cached since 56.21s ago] ('01K283GBJ27T109E6JBRS72KCZ',)
+ 2025-08-09 15:05:20,998 INFO sqlalchemy.engine.Engine SELECT line.id AS line_id, line.hunk_id AS line_hunk_id, line.type AS line_type, line.content AS line_content, line.line_number_old AS line_line_number_old, line.line_number_new AS line_line_number_new
+ FROM line
+ WHERE ? = line.hunk_id
+-INFO:sqlalchemy.engine.Engine:SELECT line.id AS line_id, line.hunk_id AS line_hunk_id, line.type AS line_type, line.content AS line_content, line.line_number_old AS line_line_number_old, line.line_number_new AS line_line_number_new
++INFO:sqlalchemy.engine.Engine:SELECT line.id AS line_id, line.hunk_id AS line_hunk_id, line.type AS line_type, line.content AS line_content, line.line_number_old AS line_line_number_old, line.line_number_new AS line_line_number_n
+ FROM line
+ WHERE ? = line.hunk_id
+ 2025-08-09 15:05:20,998 INFO sqlalchemy.engine.Engine [cached since 56.2s ago] ('01K283GBJ27T109E6JBRS72KCZ',)
+ INFO:sqlalchemy.engine.Engine:[cached since 56.2s ago] ('01K283GBJ27T109E6JBRS72KCZ',)
+ 2025-08-09 15:05:21,000 INFO sqlalchemy.engine.Engine ROLLBACK
+-INFO:sqlalchemy.engine.Engine:ROLLBACK
+\ No newline at end of file
++INFO:sqlalchemy.engine.Engine:ROLLBACK
+
