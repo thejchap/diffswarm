@@ -1,5 +1,4 @@
 <!doctype html>
-<!-- TODO(thejchap): figure out how to make the dark toggle work -->
 <html lang="en">
   <head>
     <title>{% block title %}diffswarm{% endblock %}</title>
@@ -33,35 +32,85 @@
       :root {
         --background: 0 0% 100%;
         --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 222.2 84% 4.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222.2 84% 4.9%;
+        --primary: 222.2 47.4% 11.2%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 210 40% 96%;
+        --secondary-foreground: 222.2 47.4% 11.2%;
+        --muted: 210 40% 96%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --accent: 210 40% 96%;
+        --accent-foreground: 222.2 47.4% 11.2%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 214.3 31.8% 91.4%;
+        --input: 214.3 31.8% 91.4%;
+        --ring: 222.2 84% 4.9%;
+
         --code-foreground: 222.2 84% 2%;
         --line-number-color: 220 9% 55%;
 
+        /* Light mode diff colors */
         --diff-add-bg: 142 76% 96%;
         --diff-add-border: 142 76% 36%;
         --diff-add-text: 142 76% 20%;
         --diff-remove-bg: 0 93% 96%;
         --diff-remove-border: 0 93% 46%;
         --diff-remove-text: 0 93% 25%;
+        --diff-add-hover-bg: 142 76% 92%;
+        --diff-remove-hover-bg: 0 93% 92%;
+        --diff-context-hover-bg: 220 13% 96%;
       }
 
-      .dark {
-        --background: 222.2 84% 4.9%;
-        --foreground: 210 40% 98%;
-        --code-foreground: 210 40% 95%;
-        --line-number-color: 220 9% 46%;
+      @media (prefers-color-scheme: dark) {
+        :root {
+          /* Monokai Pro Filter Machine Dark Theme */
+          --background: 220 13% 9%; /* Very dark charcoal background */
+          --foreground: 60 9% 93%; /* Light gray text */
+          --card: 220 13% 11%; /* Slightly lighter than background */
+          --card-foreground: 60 9% 87%; /* Light gray text */
+          --popover: 220 13% 11%; /* Card color for popovers */
+          --popover-foreground: 60 9% 87%; /* Light gray text */
+          --primary: 60 9% 87%; /* Light gray for primary elements */
+          --primary-foreground: 220 13% 9%; /* Dark background for primary text */
+          --secondary: 220 13% 15%; /* Darker gray for secondary elements */
+          --secondary-foreground: 60 9% 87%; /* Light gray text */
+          --muted: 220 13% 15%; /* Muted background */
+          --muted-foreground: 220 9% 46%; /* Muted text */
+          --accent: 220 13% 15%; /* Accent background */
+          --accent-foreground: 60 9% 87%; /* Light text on accent */
+          --destructive: 0 74% 42%; /* Red for destructive actions */
+          --destructive-foreground: 60 9% 87%; /* Light text on destructive */
+          --border: 220 13% 18%; /* Border color */
+          --input: 220 13% 15%; /* Input background */
+          --ring: 54 100% 68%; /* Yellow ring color for focus */
 
-        --diff-add-bg: 142 76% 10%;
-        --diff-add-border: 142 76% 36%;
-        --diff-add-text: 142 76% 85%;
-        --diff-remove-bg: 0 93% 10%;
-        --diff-remove-border: 0 93% 46%;
-        --diff-remove-text: 0 93% 85%;
+          --code-foreground: 60 9% 87%;
+          --line-number-color: 220 9% 46%;
+
+          /* More vibrant Monokai Pro diff colors */
+          --diff-add-bg: 120 100% 12%; /* Darker green background for more contrast */
+          --diff-add-border: 120 100% 45%; /* Brighter, more vibrant green border */
+          --diff-add-text: 120 100% 85%; /* Brighter green text */
+          --diff-remove-bg: 0 100% 12%; /* Darker red background for more contrast */
+          --diff-remove-border: 0 100% 55%; /* Brighter, more vibrant red border */
+          --diff-remove-text: 0 100% 85%; /* Brighter red text */
+
+          /* Enhanced hover colors for dark mode */
+          --diff-add-hover-bg: 120 100% 18%; /* Brighter green hover */
+          --diff-remove-hover-bg: 0 100% 18%; /* Brighter red hover */
+          --diff-context-hover-bg: 220 13% 20%; /* Lighter context hover */
+        }
       }
 
       .font-code {
         font-family:
           "JetBrains Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono",
           Consolas, "Courier New", monospace;
+        font-weight: 400;
         font-feature-settings:
           "liga" 1,
           "calt" 1;
@@ -71,6 +120,14 @@
       body {
         background-color: hsl(var(--background));
         color: hsl(var(--foreground));
+        background: hsl(220 9% 96%);
+        min-height: 100vh;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: hsl(220 13% 13%);
+        }
       }
 
       .diff-add {
@@ -79,10 +136,24 @@
         color: hsl(var(--diff-add-text));
       }
 
+      .diff-add:hover {
+        background-color: hsl(var(--diff-add-hover-bg)) !important;
+        border-left-color: hsl(var(--diff-add-border));
+      }
+
       .diff-remove {
         background-color: hsl(var(--diff-remove-bg));
         border-left-color: hsl(var(--diff-remove-border));
         color: hsl(var(--diff-remove-text));
+      }
+
+      .diff-remove:hover {
+        background-color: hsl(var(--diff-remove-hover-bg)) !important;
+        border-left-color: hsl(var(--diff-remove-border));
+      }
+
+      .diff-context:hover {
+        background-color: hsl(var(--diff-context-hover-bg)) !important;
       }
 
       /* Smooth transitions */
@@ -96,10 +167,49 @@
           0 2px 4px -2px rgb(0 0 0 / 0.1);
       }
 
-      .dark .shadow-elegant {
-        box-shadow:
-          0 4px 6px -1px rgb(0 0 0 / 0.3),
-          0 2px 4px -2px rgb(0 0 0 / 0.2);
+      @media (prefers-color-scheme: dark) {
+        .shadow-elegant {
+          box-shadow:
+            0 4px 6px -1px rgb(0 0 0 / 0.5),
+            0 2px 4px -2px rgb(0 0 0 / 0.3);
+        }
+      }
+
+      /* Enhanced scrollbars and styles for dark mode */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          scrollbar-width: thin;
+          scrollbar-color: hsl(220 13% 25%) hsl(220 13% 11%);
+        }
+
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: hsl(220 13% 11%);
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: hsl(220 13% 25%);
+          border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: hsl(220 13% 35%);
+        }
+
+        /* Selection colors */
+        ::selection {
+          background: hsl(220 13% 25%);
+          color: hsl(60 9% 87%);
+        }
+
+        /* Focus ring with Monokai yellow */
+        .focus\:ring-2:focus {
+          --tw-ring-color: hsl(54 100% 68%);
+        }
       }
     </style>
     {% block styles %}{% endblock %}

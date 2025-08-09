@@ -626,7 +626,7 @@ function HunkRename({ hunk, onRename }) {
             onChange=${handleChange}
             onKeyDown=${handleKeyDown}
             class="w-full px-2 py-1 text-sm font-code font-medium bg-white dark:bg-monokai-surface border rounded-md focus:outline-none focus:ring-2 transition-colors ${isValid()
-              ? "border-gray-300 dark:border-monokai-border focus:ring-blue-500 text-gray-900 dark:text-monokai-text"
+              ? "border-gray-300 dark:border-monokai-border focus:ring-blue-500 text-900 dark:text-monokai-text"
               : "border-red-300 dark:border-red-600 focus:ring-red-500 text-red-700 dark:text-red-400"}"
             placeholder="Enter hunk name..."
             disabled=${isLoading}
@@ -667,7 +667,7 @@ function HunkRename({ hunk, onRename }) {
     <div class="flex items-center gap-1 group">
       <span
         onClick=${handleEdit}
-        class="text-sm font-code font-medium text-gray-700 dark:text-monokai-text cursor-pointer hover:text-gray-900 dark:hover:text-monokai-text"
+        class="text-sm font-code font-medium text-gray-900 dark:text-monokai-text cursor-pointer hover:text-gray-900 dark:hover:text-monokai-text"
         title="Click to rename hunk"
       >
         ${hunk.name || hunk.id}
@@ -1238,7 +1238,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
 
   return html`
     <div
-      class="px-4 py-3 bg-gradient-to-r from-gray-50/80 to-gray-50/40 dark:from-gray-800/60 dark:to-gray-800/30 border-b border-gray-200/50 dark:border-gray-700/50"
+      class="px-4 py-3 bg-gray-100/50 dark:bg-gray-800/30 border-b border-gray-200/50 dark:border-gray-700/50"
     >
       <div class="flex items-start gap-3">
         <button
@@ -1271,17 +1271,17 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                 <span
                   class="font-code text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded"
                 >
-                  @@ -1 +1,2 @@
-                  <!-- <SearchHighlight text={hunk.header} searchQuery={searchQuery} /> -->
+                  @@ -${hunk.from_start},${hunk.from_count}
+                  +${hunk.to_start},${hunk.to_count} @@
                 </span>
                 <div class="flex items-center gap-2 text-xs">
                   <span
-                    class="add-indicator font-semibold px-1.5 py-0.5 rounded"
+                    class="text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full"
                   >
                     +${additions}
                   </span>
                   <span
-                    class="remove-indicator font-semibold px-1.5 py-0.5 rounded"
+                    class="text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full"
                   >
                     -${deletions}
                   </span>
@@ -1385,8 +1385,14 @@ function Line({ line, hunkId, lineIndex }) {
   /** @param {Number} number */
   const renderLineNumber = (number) => {
     return number
-      ? html`<span class="line-number">${number}</span>`
-      : html`<span class="line-number opacity-50">·</span>`;
+      ? html`<span
+          class="text-gray-500 dark:text-gray-400 select-none font-medium"
+          >${number}</span
+        >`
+      : html`<span
+          class="text-gray-500 dark:text-gray-400 select-none font-medium opacity-50"
+          >·</span
+        >`;
   };
 
   /**
@@ -1399,9 +1405,9 @@ function Line({ line, hunkId, lineIndex }) {
       case "DELETE":
         return "diff-remove border-l-2 transition-diff cursor-pointer";
       case "CONTEXT":
-        return "diff-context transition-diff cursor-pointer";
+        return "diff-context border-l-2 border-transparent transition-diff cursor-pointer";
       default:
-        return "diff-context transition-diff cursor-pointer";
+        return "diff-context border-l-2 border-transparent transition-diff cursor-pointer";
     }
   };
 
@@ -1853,6 +1859,12 @@ function FileHeader() {
                 <span class="text-gray-600 dark:text-monokai-muted"
                   >${diff.value.from_filename}</span
                 >
+                ${diff.value.from_timestamp &&
+                html`
+                  <span class="text-gray-500 dark:text-gray-400 text-xs ml-2">
+                    ${diff.value.from_timestamp.toLocaleString()}
+                  </span>
+                `}
               </div>
             `}
             ${diff.value.to_filename &&
@@ -1866,6 +1878,12 @@ function FileHeader() {
                 <span class="text-gray-600 dark:text-monokai-muted"
                   >${diff.value.to_filename}</span
                 >
+                ${diff.value.to_timestamp &&
+                html`
+                  <span class="text-gray-500 dark:text-gray-400 text-xs ml-2">
+                    ${diff.value.to_timestamp.toLocaleString()}
+                  </span>
+                `}
               </div>
             `}
           </div>
@@ -1899,12 +1917,12 @@ function FileHeader() {
             </div>
             <div class="flex items-center gap-2">
               <span
-                class="add-indicator font-semibold px-2 py-0.5 rounded-full"
+                class="text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full"
               >
                 +${totalAdditions}
               </span>
               <span
-                class="remove-indicator font-semibold px-2 py-0.5 rounded-full"
+                class="text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full"
               >
                 -${totalDeletions}
               </span>
@@ -1991,54 +2009,51 @@ function App() {
   });
 
   return html`
-    <!-- outermost - DiffViewerDemo -->
-    <div class="min-h-screen bg-gray-50 dark:bg-monokai-bg py-8">
-      <!-- DiffViewer  -->
-      <div class="max-w-6xl mx-auto">
-        <!--  main content, original header  -->
-        <div
-          class="bg-white dark:bg-monokai-bg border border-gray-200 dark:border-monokai-border rounded-2xl shadow-elegant overflow-hidden"
-        >
-          <!--  header - stays in original position  -->
-          <div class="border-b border-gray-200 dark:border-monokai-border">
-            <!-- fileheader -->
-            <${FileHeader} />
-          </div>
+    <!-- DiffViewer  -->
+    <div class="max-w-6xl mx-auto">
+      <!--  main content, original header  -->
+      <div
+        class="bg-white dark:bg-monokai-bg border border-gray-200 dark:border-monokai-border rounded-2xl shadow-elegant overflow-hidden"
+      >
+        <!--  header - stays in original position  -->
+        <div class="border-b border-gray-200 dark:border-monokai-border">
+          <!-- fileheader -->
+          <${FileHeader} />
+        </div>
 
-          <!-- main content -->
-          <div>
-            <div
-              class="divide-y divide-gray-200/50 dark:divide-monokai-border/50"
-            >
-              ${filteredHunks.length === 0
-                ? html`
-                    <div class="p-8 text-center">
-                      <div class="text-gray-500 dark:text-monokai-muted">
-                        <div class="text-lg font-medium mb-2">
-                          No hunks match the current filter
-                        </div>
-                        <div class="text-sm">
-                          ${appState.currentFilter.value === "completed" &&
-                          "No hunks have been completed yet."}
-                          ${appState.currentFilter.value === "uncompleted" &&
-                          "All hunks have been completed!"}
-                        </div>
+        <!-- main content -->
+        <div>
+          <div
+            class="divide-y divide-gray-200/50 dark:divide-monokai-border/50"
+          >
+            ${filteredHunks.length === 0
+              ? html`
+                  <div class="p-8 text-center">
+                    <div class="text-gray-500 dark:text-monokai-muted">
+                      <div class="text-lg font-medium mb-2">
+                        No hunks match the current filter
+                      </div>
+                      <div class="text-sm">
+                        ${appState.currentFilter.value === "completed" &&
+                        "No hunks have been completed yet."}
+                        ${appState.currentFilter.value === "uncompleted" &&
+                        "All hunks have been completed!"}
                       </div>
                     </div>
-                  `
-                : filteredHunks.map(
-                    /** @param {any} hunk */
-                    (hunk) => {
-                      // Find the original index for collapsed state management
-                      const originalIndex = diff.value.hunks.findIndex(
-                        (h) => h.id === hunk.id,
-                      );
-                      return html`
-                        <${Hunk} hunk=${hunk} hunkIndex=${originalIndex} />
-                      `;
-                    },
-                  )}
-            </div>
+                  </div>
+                `
+              : filteredHunks.map(
+                  /** @param {any} hunk */
+                  (hunk) => {
+                    // Find the original index for collapsed state management
+                    const originalIndex = diff.value.hunks.findIndex(
+                      (h) => h.id === hunk.id,
+                    );
+                    return html`
+                      <${Hunk} hunk=${hunk} hunkIndex=${originalIndex} />
+                    `;
+                  },
+                )}
           </div>
         </div>
       </div>

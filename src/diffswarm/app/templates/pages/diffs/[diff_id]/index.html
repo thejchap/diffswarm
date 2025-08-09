@@ -13,10 +13,12 @@
   </script>
 {% endblock %}
 {% block content %}
-  <div
-    id="app"
-    data-diff-prefetch="{{ diff.model_dump_json(by_alias=True) }}"
-    data-comments-prefetch="[{% for comment in comments %}{{ comment.model_dump_json(by_alias=True) }}{% if not loop.last %},{% endif %}{% endfor %}]"
-  ></div>
+  <div class="py-8">
+    <div
+      id="app"
+      data-diff-prefetch="{{ diff.model_dump_json(by_alias=True) }}"
+      data-comments-prefetch="[{% for comment in comments %}{{ comment.model_dump_json(by_alias=True) }}{% if not loop.last %},{% endif %}{% endfor %}]"
+    ></div>
+  </div>
   <script src="/static/js/diff.js" type="module"></script>
 {% endblock %}
