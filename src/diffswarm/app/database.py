@@ -41,11 +41,21 @@ ENGINE = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
 
 
+def get_session() -> Generator[Session]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 class Base(DeclarativeBase):
     pass
 
 
 class DBDiff(Base):
+    """maps to the `diff` table in the database."""
+
     __tablename__: str = "diff"
     id: Mapped[str] = mapped_column(
         String(26),
@@ -56,11 +66,3 @@ class DBDiff(Base):
         Text(),
         nullable=False,
     )
-
-
-def get_session() -> Generator[Session]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()

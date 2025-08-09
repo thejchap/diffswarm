@@ -20,7 +20,6 @@ class TestPages:
         res = client.get("/")
         assert res.text == "diffswarm"
 
-    @pytest.mark.skip
     def test_get_diff_not_found(self, client: TestClient) -> None:
         res = client.get(f"/diffs/{ULID()}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
@@ -44,12 +43,10 @@ class TestAPI:
         res = client.get("/api/diffs/12345")
         assert res.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    @pytest.mark.skip
     def test_get_diff_not_found(self, client: TestClient) -> None:
         res = client.get(f"/api/diffs/{ULID()}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
 
-    @pytest.mark.skip
     def test_create_get_diff(self, client: TestClient) -> None:
         res = client.post(
             "/",
