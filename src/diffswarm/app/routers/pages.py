@@ -15,9 +15,13 @@ from diffswarm.app.templates import TEMPLATES
 ROUTER = APIRouter()
 
 
-@ROUTER.get("/", response_class=PlainTextResponse)
-def home() -> str:
-    return "diffswarm"
+@ROUTER.get("/", response_class=HTMLResponse)
+def home(request: Request) -> HTMLResponse:
+    return TEMPLATES.TemplateResponse(
+        request=request,
+        name="pages/index.html",
+        context={},
+    )
 
 
 @ROUTER.get("/diffs/{diff_id}", response_class=HTMLResponse)
