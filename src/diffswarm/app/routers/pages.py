@@ -50,7 +50,7 @@ def get_diff(
 
     return TEMPLATES.TemplateResponse(
         request=request,
-        name="pages/diffs/[diff_id]/index.html",
+        name="pages/diff.html",
         context={"diff": diff, "comments": comments, "git_hash": settings.git_hash},
     )
 

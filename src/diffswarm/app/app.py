@@ -14,6 +14,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 
+from diffswarm.app.settings import get_settings
+
 from .database import ENGINE, Base
 from .routers import API, PAGES
 
@@ -23,7 +25,8 @@ LOGGER = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    Base.metadata.create_all(ENGINE)
+    if get_settings().database_create_all:
+        Base.metadata.create_all(ENGINE)
     yield
 
 
