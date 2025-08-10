@@ -7,7 +7,7 @@ be mapped to and from database models in `database.py`
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, NamedTuple, Self
 
 from dateutil import parser as dateutil_parser
 from pydantic import (
@@ -33,6 +33,16 @@ class LineType(StrEnum):
     ADD = "ADD"
     DELETE = "DELETE"
     CONTEXT = "CONTEXT"
+
+
+class HunkHeader(NamedTuple):
+    """Header information parsed from a unified diff hunk."""
+
+    from_start: int
+    from_count: int
+    to_start: int
+    to_count: int
+    has_header_context: bool
 
 
 class Line(BaseModel):
@@ -63,16 +73,6 @@ class Hunk(DiffSwarmBaseModel):
     completed_at: datetime | None = None
     lines: list[Line]
 
-    @property
-    def additions(self) -> int:
-        """Number of addition lines in this hunk."""
-        return sum(1 for line in self.lines if line.type == LineType.ADD)
-
-    @property
-    def deletions(self) -> int:
-        """Number of deletion lines in this hunk."""
-        return sum(1 for line in self.lines if line.type == LineType.DELETE)
-
     @field_validator("lines")
     @classmethod
     def validate_line_counts(cls, v: Any, info: ValidationInfo) -> Any:  # noqa: ANN401
@@ -84,7 +84,6 @@ class Hunk(DiffSwarmBaseModel):
         add_count = sum(1 for line in v if line.type == LineType.ADD)
         context_count = sum(1 for line in v if line.type == LineType.CONTEXT)
         del_context_count = delete_count + context_count
-
         if from_count != del_context_count:
             msg = f"Expected {from_count} from-lines, got {del_context_count}"
             raise ValueError(msg)
@@ -247,21 +246,51 @@ class UnifiedDiffParser:
         header = self._parse_hunk_header(self.current_line)
         self.advance()  # Move past hunk header
         lines = self._parse_hunk_lines(
-            header["from_start"],
-            header["to_start"],
-            header["from_count"],
-            header["to_count"],
+            header.from_start,
+            header.to_start,
+            header.from_count,
+            header.to_count,
         )
+
+        # If there's context in the header that's not included in the body,
+        # add a virtual context line to account for the line count
+        if header.has_header_context and lines:
+            expected_from_lines = header.from_count
+            actual_from_lines = sum(
+                1 for line in lines if line.type in (LineType.DELETE, LineType.CONTEXT)
+            )
+            if actual_from_lines < expected_from_lines:
+                # Add virtual context line at the beginning
+                virtual_line = Line(
+                    type=LineType.CONTEXT,
+                    content="",  # Empty content for virtual header context
+                    line_number_old=header.from_start,
+                    line_number_new=header.to_start,
+                )
+                lines.insert(0, virtual_line)
+                # Adjust line numbers for all subsequent lines
+                for line in lines[1:]:
+                    if (
+                        line.type in (LineType.CONTEXT, LineType.DELETE)
+                        and line.line_number_old is not None
+                    ):
+                        line.line_number_old += 1
+                    if (
+                        line.type in (LineType.CONTEXT, LineType.ADD)
+                        and line.line_number_new is not None
+                    ):
+                        line.line_number_new += 1
+
         return Hunk(
             id=None,
-            from_start=header["from_start"],
-            from_count=header["from_count"],
-            to_start=header["to_start"],
-            to_count=header["to_count"],
+            from_start=header.from_start,
+            from_count=header.from_count,
+            to_start=header.to_start,
+            to_count=header.to_count,
             lines=lines,
         )
 
-    def _parse_hunk_header(self, line: str) -> dict[str, int]:
+    def _parse_hunk_header(self, line: str) -> HunkHeader:
         """Parse '@@ -from_range +to_range @@' header."""
         parts = line.split(" ")
         min_parts = 3
@@ -276,12 +305,24 @@ class UnifiedDiffParser:
         except ValueError as err:
             msg = f"Invalid line numbers in hunk header: {line}"
             raise ValueError(msg) from err
-        return {
-            "from_start": from_start,
-            "from_count": from_count,
-            "to_start": to_start,
-            "to_count": to_count,
-        }
+
+        # Check if there's context after the closing @@
+        # Format: @@ -from +to @@ [context]
+        at_at_index = 3
+        context_start_index = 4
+        has_header_context = (
+            len(parts) > at_at_index
+            and parts[at_at_index] == "@@"
+            and len(parts) > context_start_index
+        )
+
+        return HunkHeader(
+            from_start=from_start,
+            from_count=from_count,
+            to_start=to_start,
+            to_count=to_count,
+            has_header_context=has_header_context,
+        )
 
     def _parse_range(self, range_str: str) -> tuple[int, int]:
         """Parse range like '1' or '1,3' returning (start, count)."""
@@ -391,32 +432,6 @@ class Diff(DiffSwarmBaseModel):
     to_filename: str
     to_timestamp: datetime | None = None
     hunks: list[Hunk]
-
-    @property
-    def completed_count(self) -> int:
-        """Number of completed hunks."""
-        return sum(1 for hunk in self.hunks if hunk.completed_at is not None)
-
-    @property
-    def total_count(self) -> int:
-        """Total number of hunks."""
-        return len(self.hunks)
-
-    @property
-    def total_additions(self) -> int:
-        """Total number of addition lines across all hunks."""
-        return sum(
-            sum(1 for line in hunk.lines if line.type == LineType.ADD)
-            for hunk in self.hunks
-        )
-
-    @property
-    def total_deletions(self) -> int:
-        """Total number of deletion lines across all hunks."""
-        return sum(
-            sum(1 for line in hunk.lines if line.type == LineType.DELETE)
-            for hunk in self.hunks
-        )
 
     @classmethod
     def from_db(cls, db_diff: DBDiff) -> Self:

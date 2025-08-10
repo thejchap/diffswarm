@@ -552,3 +552,9 @@ class TestParser:
             diff = f.read()
 
         assert DiffBase.parse_str(diff)
+
+    def test_2(self) -> None:
+        with Path.open(Path(__file__).parent / "fixtures/2.diff") as f:
+            diff = f.read()
+
+        assert DiffBase.parse_str(diff)
