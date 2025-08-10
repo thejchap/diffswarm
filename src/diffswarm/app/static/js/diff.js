@@ -2148,11 +2148,38 @@ function App() {
 }
 
 /**
+ * Update document title based on diff name and completion status
+ */
+function updateDocumentTitle(diff) {
+  const diffName = diff.name || "diffswarm";
+  const completedCount = diff.hunks.filter(
+    (hunk) => hunk.completed_at != null,
+  ).length;
+  const totalCount = diff.hunks.length;
+
+  if (totalCount > 0 && diffName !== "diffswarm") {
+    document.title = `[${completedCount}/${totalCount}] ${diffName}`;
+  } else {
+    document.title = diffName;
+  }
+}
+
+/**
  * set up and mount the app
  */
+const appState = createAppState();
+
+// Initial title update
+updateDocumentTitle(appState.diff.value);
+
+// Watch for changes to diff and update title
+appState.diff.subscribe((diff) => {
+  updateDocumentTitle(diff);
+});
+
 render(
   html`
-    <${AppState.Provider} value=${createAppState()}>
+    <${AppState.Provider} value=${appState}>
       <${App} />
     <//>
   `,

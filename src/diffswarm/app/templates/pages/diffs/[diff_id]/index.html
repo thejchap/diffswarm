@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}hello{% endblock %}
+{% block title %}{{ diff.name or "diffswarm" }}{% endblock %}
 {% block scripts %}
   <script type="importmap">
     {
@@ -20,5 +20,5 @@
       data-comments-prefetch="[{% for comment in comments %}{{ comment.model_dump_json(by_alias=True) }}{% if not loop.last %},{% endif %}{% endfor %}]"
     ></div>
   </div>
-  <script src="/static/js/diff.js" type="module"></script>
+  <script src="/static/js/diff.js?v={{ git_hash }}" type="module"></script>
 {% endblock %}

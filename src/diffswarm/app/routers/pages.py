@@ -8,7 +8,7 @@ from starlette.status import HTTP_201_CREATED
 from ulid import ULID
 
 from diffswarm.app.database import DBComment, DBDiff, DBHunk, DBLine
-from diffswarm.app.dependencies import SessionDependency
+from diffswarm.app.dependencies import SessionDependency, SettingsDependency
 from diffswarm.app.models import Comment, Diff, DiffBase
 from diffswarm.app.templates import TEMPLATES
 
@@ -29,6 +29,7 @@ def get_diff(
     request: Request,
     diff_id: ULID,
     session: SessionDependency,
+    settings: SettingsDependency,
 ) -> HTMLResponse:
     db_diff = (
         session.query(DBDiff)
@@ -50,7 +51,7 @@ def get_diff(
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/diffs/[diff_id]/index.html",
-        context={"diff": diff, "comments": comments},
+        context={"diff": diff, "comments": comments, "git_hash": settings.git_hash},
     )
 
 

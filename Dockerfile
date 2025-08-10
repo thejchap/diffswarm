@@ -7,6 +7,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
   --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
   uv sync --locked --no-install-project --no-editable
 COPY . /app
+ARG GIT_HASH=dev
+RUN echo $GIT_HASH > REVISION
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --locked --no-editable
 CMD ["/app/.venv/bin/fastapi", "run"]

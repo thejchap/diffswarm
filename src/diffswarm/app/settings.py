@@ -1,4 +1,5 @@
 from functools import cache
+from pathlib import Path
 from typing import ClassVar, Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,13 @@ class Settings(BaseSettings):
     # TODO(thejchap): update after moving to file db
     # database_poolclass: Literal["QueuePool", "StaticPool"] = "QueuePool"
     database_poolclass: Literal["QueuePool", "StaticPool"] = "StaticPool"
+
+    @property
+    def git_hash(self) -> str:
+        revision_file = Path("REVISION")
+        if revision_file.exists():
+            return revision_file.read_text().strip()
+        return "dev"
 
 
 @cache
