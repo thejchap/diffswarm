@@ -7,14 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env")
-    # TODO(thejchap): update after moving to file db
-    # database_url: str = "sqlite:///diffswarm-dev.sqlite3"
-    database_url: str = "sqlite://"
+    database_url: str = "sqlite:///diffswarm-dev.sqlite3"
     database_echo: bool = True
     database_connect_check_same_thread: bool = False
-    # TODO(thejchap): update after moving to file db
-    # database_poolclass: Literal["QueuePool", "StaticPool"] = "QueuePool"
-    database_poolclass: Literal["QueuePool", "StaticPool"] = "StaticPool"
+    database_poolclass: Literal["QueuePool", "StaticPool"] = "QueuePool"
+    database_create_all: bool = False
 
     @property
     def git_hash(self) -> str:
