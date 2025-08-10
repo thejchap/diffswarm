@@ -523,7 +523,7 @@ function HunkFilter({
                   onFilterChange(option.value);
                   setIsOpen(false);
                 }}
-                class="${`w-full flex items-center gap-3 px-4 py-3 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                class="${`w-full flex items-center gap-3 px-4 py-3 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer ${
                   currentFilter === option.value
                     ? "bg-blue-50 dark:bg-blue-900/20"
                     : ""
@@ -1007,7 +1007,7 @@ function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
     <div class="relative">
       <button
         onClick=${onToggle}
-        class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
         aria-label="Comment actions"
       >
         <${MoreVertical} class="w-4 h-4 text-gray-400" />
@@ -1023,7 +1023,7 @@ function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
               onReply();
               onToggle();
             }}
-            class="w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+            class="w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 cursor-pointer"
           >
             <${Reply} class="w-3.5 h-3.5" />
             Reply
@@ -1033,7 +1033,7 @@ function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
               onDelete();
               onToggle();
             }}
-            class="w-full px-3 py-1.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+            class="w-full px-3 py-1.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 cursor-pointer"
           >
             <${Trash2} class="w-3.5 h-3.5" />
             Delete
@@ -1314,7 +1314,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
       <div class="flex items-start gap-3">
         <button
           onClick=${onToggleComplete}
-          class="mt-0.5 flex-shrink-0 transition-all duration-200 hover:scale-110 transform"
+          class="mt-0.5 flex-shrink-0 transition-all duration-200 hover:scale-110 transform cursor-pointer"
           aria-label=${`Mark hunk ${hunkIndex + 1} as ${isCompleted ? "incomplete" : "complete"}`}
         >
           ${isCompleted
