@@ -69,7 +69,7 @@ def get_session() -> Generator[Session]:
 
 
 @event.listens_for(ENGINE, "connect")
-def set_sqlite_pragma(
+def set_sqlite_pragmas(
     dbapi_connection: SQLite3Connection,
     _,  # noqa: ANN001
 ) -> None:
@@ -77,7 +77,21 @@ def set_sqlite_pragma(
     ac = dbapi_connection.autocommit
     dbapi_connection.autocommit = True
     cursor = dbapi_connection.cursor()
+
+    # enforce fk constraints
     cursor.execute("PRAGMA foreign_keys=ON")
+
+    # readers don't block writers
+    # https://fly.io/blog/wal-mode-in-litefs/
+    cursor.execute("PRAGMA journal_mode = WAL")
+
+    # more performant, still safe in WAL mode
+    # https://www.sqlite.org/pragma.html#pragma_synchronous
+    cursor.execute("PRAGMA synchronous = NORMAL")
+
+    # retry instead of SQLITE_BUSY
+    cursor.execute("PRAGMA busy_timeout = 5000")
+
     cursor.close()
     dbapi_connection.autocommit = ac
 
