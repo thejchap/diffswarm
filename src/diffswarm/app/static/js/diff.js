@@ -2150,7 +2150,7 @@ function App() {
 /**
  * Update document title based on diff name and completion status
  */
-function updateDocumentTitle(diff) {
+function updateDocumentTitle(/** @type {Diff} */ diff) {
   const diffName = diff.name || "diffswarm";
   const completedCount = diff.hunks.filter(
     (hunk) => hunk.completed_at != null,

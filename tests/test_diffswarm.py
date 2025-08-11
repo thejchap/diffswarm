@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import TypeAdapter, ValidationError
 from starlette import status
-from ulid import ULID
 
 from diffswarm import APP
-from diffswarm.app.models import DiffBase
+from diffswarm.app.models import DiffBase, PrefixedULID, generate_prefixed_ulid
 
 
 @pytest.fixture(name="client")
@@ -25,7 +25,7 @@ class TestPages:
         assert "<html" in res.text
 
     def test_get_diff_not_found(self, client: TestClient) -> None:
-        res = client.get(f"/diffs/{ULID()}")
+        res = client.get(f"/diffs/{generate_prefixed_ulid('d')}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
 
     def test_create_get_diff(self, client: TestClient) -> None:
@@ -36,7 +36,7 @@ class TestPages:
         )
         assert res.status_code == status.HTTP_201_CREATED, res.text
         diff_id = res.headers["X-Diff-ID"]
-        res = client.get(f"/diffs/{diff_id}")
+        res = client.get(f"/{diff_id}")
         assert res.status_code == status.HTTP_200_OK
         body = res.text
         assert "<html" in body
@@ -48,7 +48,7 @@ class TestAPI:
         assert res.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_get_diff_not_found(self, client: TestClient) -> None:
-        res = client.get(f"/api/diffs/{ULID()}")
+        res = client.get(f"/api/diffs/{generate_prefixed_ulid('d')}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
 
     def test_create_get_diff(self, client: TestClient) -> None:
@@ -92,12 +92,9 @@ class TestAPI:
         assert lines[1]["line_number_new"] == expected_new_line_number
 
     def test_database_storage_and_retrieval(self, client: TestClient) -> None:
-        """Test that structured diff data is properly stored and retrieved."""
         expected_to_count = 2
         expected_line_count = 2
         expected_add_line_number = 2
-
-        # Create a diff via the API
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -105,48 +102,34 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Retrieve and validate via API instead of direct database queries
         res = client.get(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_200_OK
         body = res.json()
         diff = body["diff"]
-
-        # Check diff structure
         assert diff["id"] == diff_id
         assert diff["raw"] == DiffBase.HELLO_WORLD
         assert diff["from_filename"] == "/dev/fd/14"
         assert diff["to_filename"] == "/dev/fd/16"
         assert diff["from_timestamp"] is not None
         assert diff["to_timestamp"] is not None
-
-        # Check hunks structure
         assert len(diff["hunks"]) == 1
         hunk = diff["hunks"][0]
         assert hunk["from_start"] == 1
         assert hunk["from_count"] == 1
         assert hunk["to_start"] == 1
         assert hunk["to_count"] == expected_to_count
-
-        # Check lines structure
         lines = hunk["lines"]
         assert len(lines) == expected_line_count
-
-        # First line (context)
         context_line = next(line for line in lines if line["type"] == "CONTEXT")
         assert context_line["content"] == "hello"
         assert context_line["line_number_old"] == 1
         assert context_line["line_number_new"] == 1
-
-        # Second line (add)
         add_line = next(line for line in lines if line["type"] == "ADD")
         assert add_line["content"] == "world"
         assert add_line["line_number_old"] is None
         assert add_line["line_number_new"] == expected_add_line_number
 
     def test_create_comment(self, client: TestClient) -> None:
-        """Test creating a comment on a diff."""
-        # First create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -154,14 +137,10 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Get the diff to extract hunk ID
         res = client.get(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_200_OK
         diff = res.json()["diff"]
         hunk_id = diff["hunks"][0]["id"]
-
-        # Create a comment
         comment_data = {
             "text": "This is a test comment",
             "author": "test_user",
@@ -173,7 +152,6 @@ class TestAPI:
         }
         res = client.post("/api/comments", json=comment_data)
         assert res.status_code == status.HTTP_200_OK
-
         body = res.json()
         comment = body["comment"]
         assert comment["text"] == "This is a test comment"
@@ -188,8 +166,6 @@ class TestAPI:
         assert "timestamp" in comment
 
     def test_delete_comment(self, client: TestClient) -> None:
-        """Test deleting a comment."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -197,13 +173,9 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Get hunk ID
         res = client.get(f"/api/diffs/{diff_id}")
         diff = res.json()["diff"]
         hunk_id = diff["hunks"][0]["id"]
-
-        # Create a comment
         comment_data = {
             "text": "Comment to delete",
             "author": "delete_user",
@@ -216,26 +188,18 @@ class TestAPI:
         res = client.post("/api/comments", json=comment_data)
         assert res.status_code == status.HTTP_200_OK
         comment_id = res.json()["comment"]["id"]
-
-        # Delete the comment
         res = client.delete(f"/api/comments/{comment_id}")
         assert res.status_code == status.HTTP_204_NO_CONTENT
-
-        # Verify comment is deleted by trying to delete it again (should be 404)
         res = client.delete(f"/api/comments/{comment_id}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
 
     def test_delete_comment_not_found(self, client: TestClient) -> None:
-        """Test deleting a non-existent comment returns 404."""
-        fake_comment_id = str(ULID())
-        res = client.delete(f"/api/comments/{fake_comment_id}")
+        res = client.delete(f"/api/comments/{generate_prefixed_ulid('d')}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
         body = res.json()
         assert body["detail"] == "Comment not found"
 
     def test_create_reply_comment(self, client: TestClient) -> None:
-        """Test creating a reply to another comment."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -243,13 +207,9 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Get hunk ID
         res = client.get(f"/api/diffs/{diff_id}")
         diff = res.json()["diff"]
         hunk_id = diff["hunks"][0]["id"]
-
-        # Create parent comment
         parent_comment_data = {
             "text": "Parent comment",
             "author": "parent_user",
@@ -262,8 +222,6 @@ class TestAPI:
         res = client.post("/api/comments", json=parent_comment_data)
         assert res.status_code == status.HTTP_200_OK
         parent_comment_id = res.json()["comment"]["id"]
-
-        # Create reply comment
         reply_comment_data = {
             "text": "Reply comment",
             "author": "reply_user",
@@ -283,18 +241,12 @@ class TestAPI:
         assert reply_comment["in_reply_to"] == parent_comment_id
 
         reply_comment_id = reply_comment["id"]
-
-        # Verify both comments exist by checking they can be deleted individually
-        # Delete reply first (should succeed)
         res = client.delete(f"/api/comments/{reply_comment_id}")
         assert res.status_code == status.HTTP_204_NO_CONTENT
-        # Delete parent (should succeed)
         res = client.delete(f"/api/comments/{parent_comment_id}")
         assert res.status_code == status.HTTP_204_NO_CONTENT
 
     def test_update_diff_name(self, client: TestClient) -> None:
-        """Test updating a diff name."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -302,29 +254,22 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Update diff name
         update_data = {"name": "My Custom Diff Name"}
         res = client.put(f"/api/diffs/{diff_id}", json=update_data)
         assert res.status_code == status.HTTP_200_OK
-
         body = res.json()
         diff = body["diff"]
         assert diff["name"] == "My Custom Diff Name"
         assert diff["id"] == diff_id
 
     def test_update_diff_not_found(self, client: TestClient) -> None:
-        """Test updating a non-existent diff returns 404."""
-        fake_diff_id = str(ULID())
         update_data = {"name": "Test Name"}
-        res = client.put(f"/api/diffs/{fake_diff_id}", json=update_data)
+        res = client.put(f"/api/diffs/{generate_prefixed_ulid('d')}", json=update_data)
         assert res.status_code == status.HTTP_404_NOT_FOUND
         body = res.json()
         assert body["detail"] == "Diff not found"
 
     def test_update_hunk_name(self, client: TestClient) -> None:
-        """Test updating a hunk name."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -332,34 +277,25 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Get hunk ID
         res = client.get(f"/api/diffs/{diff_id}")
         diff = res.json()["diff"]
         hunk_id = diff["hunks"][0]["id"]
-
-        # Update hunk name
         update_data = {"name": "My Custom Hunk Name"}
         res = client.put(f"/api/hunks/{hunk_id}", json=update_data)
         assert res.status_code == status.HTTP_200_OK
-
         body = res.json()
         hunk = body["hunk"]
         assert hunk["name"] == "My Custom Hunk Name"
         assert hunk["id"] == hunk_id
 
     def test_update_hunk_not_found(self, client: TestClient) -> None:
-        """Test updating a non-existent hunk returns 404."""
-        fake_hunk_id = str(ULID())
         update_data = {"name": "Test Name"}
-        res = client.put(f"/api/hunks/{fake_hunk_id}", json=update_data)
+        res = client.put(f"/api/hunks/{generate_prefixed_ulid('h')}", json=update_data)
         assert res.status_code == status.HTTP_404_NOT_FOUND
         body = res.json()
         assert body["detail"] == "Hunk not found"
 
     def test_delete_diff(self, client: TestClient) -> None:
-        """Test deleting a diff."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -367,23 +303,15 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Verify diff exists
         res = client.get(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_200_OK
-
-        # Delete the diff
         res = client.delete(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_204_NO_CONTENT
-
-        # Verify diff is deleted
         res = client.get(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
 
     def test_delete_diff_not_found(self, client: TestClient) -> None:
-        """Test deleting a non-existent diff returns 404."""
-        fake_diff_id = str(ULID())
-        res = client.delete(f"/api/diffs/{fake_diff_id}")
+        res = client.delete(f"/api/diffs/{generate_prefixed_ulid('d')}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
         body = res.json()
         assert body["detail"] == "Diff not found"
@@ -391,8 +319,6 @@ class TestAPI:
     def test_cascade_delete_diff_deletes_hunks_lines_comments(
         self, client: TestClient
     ) -> None:
-        """Test that deleting a diff cascades to delete hunks, lines, and comments."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -400,8 +326,6 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Get the diff to verify hunks exist
         res = client.get(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_200_OK
         diff = res.json()["diff"]
@@ -409,8 +333,6 @@ class TestAPI:
         assert len(diff["hunks"]) == 1
         expected_line_count = 2
         assert len(diff["hunks"][0]["lines"]) == expected_line_count
-
-        # Create some comments
         comment_data = {
             "text": "Test comment",
             "author": "test_user",
@@ -422,36 +344,22 @@ class TestAPI:
         }
         res = client.post("/api/comments", json=comment_data)
         assert res.status_code == status.HTTP_200_OK
-
         res = client.post("/api/comments", json=comment_data)
         assert res.status_code == status.HTTP_200_OK
         comment_id = res.json()["comment"]["id"]
-
-        # Verify comment exists by trying to delete it (should succeed)
         res = client.delete(f"/api/comments/{comment_id}")
         assert res.status_code == status.HTTP_204_NO_CONTENT
-
-        # Create another comment to test cascade delete
         res = client.post("/api/comments", json=comment_data)
         assert res.status_code == status.HTTP_200_OK
         comment_id_2 = res.json()["comment"]["id"]
-
-        # Delete the diff
         res = client.delete(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_204_NO_CONTENT
-
-        # Verify everything is deleted:
-        # 1. Diff is gone
         res = client.get(f"/api/diffs/{diff_id}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
-
-        # 2. Comments are gone (cascade delete worked) - should return 404
         res = client.delete(f"/api/comments/{comment_id_2}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
 
     def test_cascade_delete_comment_deletes_replies(self, client: TestClient) -> None:
-        """Test that deleting a parent comment cascades to delete reply comments."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -459,13 +367,9 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Get hunk ID
         res = client.get(f"/api/diffs/{diff_id}")
         diff = res.json()["diff"]
         hunk_id = diff["hunks"][0]["id"]
-
-        # Create parent comment
         parent_comment_data = {
             "text": "Parent comment",
             "author": "parent_user",
@@ -478,8 +382,6 @@ class TestAPI:
         res = client.post("/api/comments", json=parent_comment_data)
         assert res.status_code == status.HTTP_200_OK
         parent_comment_id = res.json()["comment"]["id"]
-
-        # Create reply comment
         reply_comment_data = {
             "text": "Reply comment",
             "author": "reply_user",
@@ -493,18 +395,12 @@ class TestAPI:
         res = client.post("/api/comments", json=reply_comment_data)
         assert res.status_code == status.HTTP_200_OK
         reply_comment_id = res.json()["comment"]["id"]
-
-        # Delete the parent comment (this should cascade delete the reply)
         res = client.delete(f"/api/comments/{parent_comment_id}")
         assert res.status_code == status.HTTP_204_NO_CONTENT
-
-        # Verify reply comment is cascade deleted (trying to delete should return 404)
         res = client.delete(f"/api/comments/{reply_comment_id}")
         assert res.status_code == status.HTTP_404_NOT_FOUND
 
     def test_toggle_hunk_completion(self, client: TestClient) -> None:
-        """Test toggling hunk completion status using PUT endpoint."""
-        # Create a diff
         res = client.post(
             "/",
             content=DiffBase.HELLO_WORLD,
@@ -512,34 +408,25 @@ class TestAPI:
         )
         assert res.status_code == status.HTTP_201_CREATED
         diff_id = res.headers["X-Diff-ID"]
-
-        # Get hunk ID
         res = client.get(f"/api/diffs/{diff_id}")
         diff = res.json()["diff"]
         hunk_id = diff["hunks"][0]["id"]
-
-        # Initially hunk should not be completed
         assert diff["hunks"][0]["completed_at"] is None
-
-        # Mark as complete using PUT endpoint
         completed_at = datetime.now(UTC).isoformat()
         res = client.put(f"/api/hunks/{hunk_id}", json={"completed_at": completed_at})
         assert res.status_code == status.HTTP_200_OK
         hunk = res.json()["hunk"]
         assert hunk["completed_at"] is not None
-
-        # Mark as incomplete using PUT endpoint
         res = client.put(f"/api/hunks/{hunk_id}", json={"completed_at": None})
         assert res.status_code == status.HTTP_200_OK
         hunk = res.json()["hunk"]
         assert hunk["completed_at"] is None
 
     def test_toggle_hunk_completion_not_found(self, client: TestClient) -> None:
-        """Test toggling completion for non-existent hunk returns 404."""
-        fake_hunk_id = str(ULID())
         completed_at = datetime.now(UTC).isoformat()
         res = client.put(
-            f"/api/hunks/{fake_hunk_id}", json={"completed_at": completed_at}
+            f"/api/hunks/{generate_prefixed_ulid('h')}",
+            json={"completed_at": completed_at},
         )
         assert res.status_code == status.HTTP_404_NOT_FOUND
         body = res.json()
@@ -558,3 +445,23 @@ class TestParser:
             diff = f.read()
 
         assert DiffBase.parse_str(diff)
+
+
+class TestPrefixedULID:
+    ta = TypeAdapter[PrefixedULID](PrefixedULID)
+
+    def validate(self, val: str) -> str:
+        return self.ta.validate_python(val)
+
+    def test_lower(self) -> None:
+        val = "a-01BX5ZZKBKACTAV9WEVGEMMVRZ"
+        assert self.validate(val) == val.lower()
+
+    def test_invalid(self) -> None:
+        val = "a-01BX5ZZKBKACTAV9"
+        with pytest.raises(ValidationError):
+            assert self.validate(val) == val.lower()
+
+    def test_identity(self) -> None:
+        val = generate_prefixed_ulid("a")
+        assert self.validate(val) == val

@@ -7,19 +7,41 @@ be mapped to and from database models in `database.py`
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, ClassVar, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, NamedTuple, Self
 
 from dateutil import parser as dateutil_parser
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
+    StringConstraints,
     ValidationInfo,
     field_validator,
 )
 from ulid import ULID
 
 from .database import DBComment, DBDiff, DBHunk, DBLine
+
+
+def validate_prefixed_ulid(raw: str) -> str:
+    prefix, ulid = raw.split("-")
+    return f"{prefix}-{ULID.parse(ulid.upper())}".lower()
+
+
+def generate_prefixed_ulid(prefix: str) -> str:
+    return f"{prefix}-{ULID()}".lower()
+
+
+PrefixedULID = Annotated[
+    str,
+    StringConstraints(
+        to_lower=True,
+        strip_whitespace=True,
+        pattern=r"^[A-Za-z]-[0-9A-Ha-hJKMNP-TV-Zjkmnp-tv-z]{26}$",
+    ),
+    AfterValidator(validate_prefixed_ulid),
+]
 
 
 class DiffSwarmBaseModel(BaseModel):
@@ -64,7 +86,7 @@ class Line(BaseModel):
 
 class Hunk(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id_: ULID | None = Field(None, alias="id")
+    id_: PrefixedULID | None = Field(None, alias="id")
     name: str | None = None  # Display name, defaults to id
     from_start: int = Field(..., ge=0)
     from_count: int = Field(..., ge=0)
@@ -96,7 +118,7 @@ class Hunk(DiffSwarmBaseModel):
     def from_db(cls, db_hunk: DBHunk) -> Self:
         """Create a Hunk from a database model."""
         return cls(
-            id=ULID.from_str(db_hunk.id),
+            id=db_hunk.id,
             name=db_hunk.name or db_hunk.id,  # Use name if available, fallback to id
             from_start=db_hunk.from_start,
             from_count=db_hunk.from_count,
@@ -424,7 +446,7 @@ class UnifiedDiffParser:
 
 class Diff(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id_: ULID = Field(..., alias="id")
+    id_: PrefixedULID = Field(..., alias="id")
     name: str  # Display name, defaults to id
     raw: str
     from_filename: str
@@ -445,7 +467,7 @@ class Diff(DiffSwarmBaseModel):
             to_timestamp = dateutil_parser.parse(db_diff.to_timestamp)
 
         return cls(
-            id=ULID.from_str(db_diff.id),
+            id=db_diff.id,
             name=db_diff.name or str(db_diff.id),  # Default to id if name is None
             raw=db_diff.raw,
             from_filename=db_diff.from_filename,
@@ -458,31 +480,29 @@ class Diff(DiffSwarmBaseModel):
 
 class Comment(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id_: ULID = Field(..., alias="id")
+    id_: PrefixedULID = Field(..., alias="id")
     text: str
     author: str
     timestamp: datetime
-    hunk_id: ULID
-    diff_id: ULID
+    hunk_id: PrefixedULID
+    diff_id: PrefixedULID
     line_index: int
     start_offset: int
     end_offset: int
-    in_reply_to: ULID | None = None
+    in_reply_to: PrefixedULID | None = None
 
     @classmethod
     def from_db(cls, db_comment: DBComment) -> Self:
         """Create a Comment from a database model."""
         return cls(
-            id=ULID.from_str(db_comment.id),
+            id=db_comment.id,
             text=db_comment.text,
             author=db_comment.author,
             timestamp=db_comment.timestamp,
-            hunk_id=ULID.from_str(db_comment.hunk_id),
-            diff_id=ULID.from_str(db_comment.diff_id),
+            hunk_id=db_comment.hunk_id,
+            diff_id=db_comment.diff_id,
             line_index=db_comment.line_index,
             start_offset=db_comment.start_offset,
             end_offset=db_comment.end_offset,
-            in_reply_to=ULID.from_str(db_comment.in_reply_to)
-            if db_comment.in_reply_to
-            else None,
+            in_reply_to=db_comment.in_reply_to if db_comment.in_reply_to else None,
         )

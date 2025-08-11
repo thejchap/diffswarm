@@ -3,3 +3,9 @@ services:
     build: .
     ports:
       - "8000:8000"
+    volumes:
+      - db:/etc/db
+    environment:
+      DATABASE_URL: "sqlite:////etc/db/diffswarm-dev.sqlite3"
+volumes:
+  db:

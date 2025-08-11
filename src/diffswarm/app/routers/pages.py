@@ -5,11 +5,16 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BeforeValidator
 from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_201_CREATED
-from ulid import ULID
 
 from diffswarm.app.database import DBComment, DBDiff, DBHunk, DBLine
 from diffswarm.app.dependencies import SessionDependency, SettingsDependency
-from diffswarm.app.models import Comment, Diff, DiffBase
+from diffswarm.app.models import (
+    Comment,
+    Diff,
+    DiffBase,
+    PrefixedULID,
+    generate_prefixed_ulid,
+)
 from diffswarm.app.templates import TEMPLATES
 
 ROUTER = APIRouter()
@@ -24,17 +29,17 @@ def home(request: Request) -> HTMLResponse:
     )
 
 
-@ROUTER.get("/diffs/{diff_id}", response_class=HTMLResponse)
+@ROUTER.get("/{diff_id}", response_class=HTMLResponse)
 def get_diff(
     request: Request,
-    diff_id: ULID,
+    diff_id: PrefixedULID,
     session: SessionDependency,
     settings: SettingsDependency,
 ) -> HTMLResponse:
     db_diff = (
         session.query(DBDiff)
         .options(selectinload(DBDiff.hunks).selectinload(DBHunk.lines))
-        .filter(DBDiff.id == str(diff_id))
+        .filter(DBDiff.id == diff_id)
         .one()
     )
     diff = Diff.from_db(db_diff)
@@ -42,7 +47,7 @@ def get_diff(
     # Fetch comments for this diff
     db_comments = (
         session.query(DBComment)
-        .filter(DBComment.diff_id == str(diff_id))
+        .filter(DBComment.diff_id == diff_id)
         .order_by(DBComment.timestamp)
         .all()
     )
@@ -79,7 +84,7 @@ def create_diff(
     ],
     session: SessionDependency,
 ) -> str:
-    diff_id = str(ULID())
+    diff_id = generate_prefixed_ulid("d")
     db_diff = DBDiff(
         id=diff_id,
         name=diff_id,
@@ -91,7 +96,7 @@ def create_diff(
     )
     session.add(db_diff)
     for hunk_data in body.hunks:
-        hunk_id = str(ULID())
+        hunk_id = generate_prefixed_ulid("h")
         db_hunk = DBHunk(
             id=hunk_id,
             name=hunk_id,
@@ -104,7 +109,7 @@ def create_diff(
         session.add(db_hunk)
         for line_data in hunk_data.lines:
             db_line = DBLine(
-                id=str(ULID()),
+                id=generate_prefixed_ulid("l"),
                 hunk_id=hunk_id,
                 type=line_data.type.value,
                 content=line_data.content,

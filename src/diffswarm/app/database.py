@@ -11,9 +11,11 @@ pydantic models for the api should be converted into/from these models.
 
 from collections.abc import Generator
 from datetime import datetime
+from sqlite3 import Connection as SQLite3Connection
 from typing import assert_never
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -23,6 +25,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    event,
     func,
 )
 from sqlalchemy.orm import (
@@ -65,6 +68,20 @@ def get_session() -> Generator[Session]:
         db.close()
 
 
+@event.listens_for(ENGINE, "connect")
+def set_sqlite_pragma(
+    dbapi_connection: SQLite3Connection,
+    _,  # noqa: ANN001
+) -> None:
+    """https://docs.sqlalchemy.org/en/20/dialects/sqlite.html#sqlite-foreign-keys."""
+    ac = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+    dbapi_connection.autocommit = ac
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -74,7 +91,8 @@ class DBDiff(Base):
 
     __tablename__: str = "diff"
     id: Mapped[str] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(id) == 28"),
         primary_key=True,
         nullable=False,
     )
@@ -116,7 +134,8 @@ class DBHunk(Base):
 
     __tablename__: str = "hunk"
     id: Mapped[str] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(id) == 28"),
         primary_key=True,
         nullable=False,
     )
@@ -125,7 +144,8 @@ class DBHunk(Base):
         nullable=True,  # Will default to id if None
     )
     diff_id: Mapped[str] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(diff_id) == 28"),
         ForeignKey("diff.id"),
         nullable=False,
     )
@@ -165,7 +185,8 @@ class DBLine(Base):
 
     __tablename__: str = "line"
     id: Mapped[str] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(id) == 28"),
         primary_key=True,
         nullable=False,
     )
@@ -200,7 +221,8 @@ class DBComment(Base):
 
     __tablename__: str = "comment"
     id: Mapped[str] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(id) == 28"),
         primary_key=True,
         nullable=False,
     )
@@ -218,12 +240,14 @@ class DBComment(Base):
         server_default=func.now(),
     )
     hunk_id: Mapped[str] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(hunk_id) == 28"),
         ForeignKey("hunk.id"),
         nullable=False,
     )
     diff_id: Mapped[str] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(diff_id) == 28"),
         ForeignKey("diff.id"),
         nullable=False,
     )
@@ -240,7 +264,8 @@ class DBComment(Base):
         nullable=False,
     )
     in_reply_to: Mapped[str | None] = mapped_column(
-        String(26),
+        String(28),
+        CheckConstraint("LENGTH(in_reply_to) == 28"),
         ForeignKey("comment.id"),
         nullable=True,
     )

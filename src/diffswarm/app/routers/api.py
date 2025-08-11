@@ -1,12 +1,20 @@
+# d-01arz3ndektsv4rrffq69g5fav
+
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy.orm import selectinload
-from ulid import ULID
 
 from diffswarm.app.database import DBComment, DBDiff, DBHunk
 from diffswarm.app.dependencies import SessionDependency
-from diffswarm.app.models import Comment, Diff, DiffSwarmBaseModel, Hunk
+from diffswarm.app.models import (
+    Comment,
+    Diff,
+    DiffSwarmBaseModel,
+    Hunk,
+    PrefixedULID,
+    generate_prefixed_ulid,
+)
 
 ROUTER = APIRouter()
 
@@ -18,12 +26,26 @@ class GetDiffResponse(DiffSwarmBaseModel):
 class CreateCommentRequest(DiffSwarmBaseModel):
     text: str
     author: str
-    hunk_id: ULID
-    diff_id: ULID
+    hunk_id: PrefixedULID
+    diff_id: PrefixedULID
     line_index: int
     start_offset: int
     end_offset: int
-    in_reply_to: ULID | None = None
+    in_reply_to: PrefixedULID | None = None
+
+    def to_db(self) -> DBComment:
+        return DBComment(
+            id=generate_prefixed_ulid("c"),
+            text=self.text,
+            author=self.author,
+            timestamp=datetime.now(UTC),
+            hunk_id=self.hunk_id,
+            diff_id=self.diff_id,
+            line_index=self.line_index,
+            start_offset=self.start_offset,
+            end_offset=self.end_offset,
+            in_reply_to=self.in_reply_to if self.in_reply_to else None,
+        )
 
 
 class CreateCommentResponse(DiffSwarmBaseModel):
@@ -48,11 +70,11 @@ class UpdateHunkResponse(DiffSwarmBaseModel):
 
 
 @ROUTER.get("/diffs/{diff_id}")
-def get_diff(diff_id: ULID, session: SessionDependency) -> GetDiffResponse:
+def get_diff(diff_id: PrefixedULID, session: SessionDependency) -> GetDiffResponse:
     db_diff = (
         session.query(DBDiff)
         .options(selectinload(DBDiff.hunks).selectinload(DBHunk.lines))
-        .filter(DBDiff.id == str(diff_id))
+        .filter(DBDiff.id == diff_id)
         .one()
     )
     diff = Diff.from_db(db_diff)
@@ -63,18 +85,7 @@ def get_diff(diff_id: ULID, session: SessionDependency) -> GetDiffResponse:
 def create_comment(
     request: CreateCommentRequest, session: SessionDependency
 ) -> CreateCommentResponse:
-    db_comment = DBComment(
-        id=str(ULID()),
-        text=request.text,
-        author=request.author,
-        timestamp=datetime.now(UTC),
-        hunk_id=str(request.hunk_id),
-        diff_id=str(request.diff_id),
-        line_index=request.line_index,
-        start_offset=request.start_offset,
-        end_offset=request.end_offset,
-        in_reply_to=str(request.in_reply_to) if request.in_reply_to else None,
-    )
+    db_comment = request.to_db()
     session.add(db_comment)
     session.commit()
     session.refresh(db_comment)
@@ -83,10 +94,8 @@ def create_comment(
 
 
 @ROUTER.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_comment(comment_id: ULID, session: SessionDependency) -> None:
-    db_comment = (
-        session.query(DBComment).filter(DBComment.id == str(comment_id)).first()
-    )
+def delete_comment(comment_id: PrefixedULID, session: SessionDependency) -> None:
+    db_comment = session.query(DBComment).filter(DBComment.id == comment_id).first()
     if not db_comment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found"
@@ -97,12 +106,12 @@ def delete_comment(comment_id: ULID, session: SessionDependency) -> None:
 
 @ROUTER.put("/diffs/{diff_id}")
 def update_diff(
-    diff_id: ULID, request: UpdateDiffRequest, session: SessionDependency
+    diff_id: PrefixedULID, request: UpdateDiffRequest, session: SessionDependency
 ) -> UpdateDiffResponse:
     db_diff = (
         session.query(DBDiff)
         .options(selectinload(DBDiff.hunks).selectinload(DBHunk.lines))
-        .filter(DBDiff.id == str(diff_id))
+        .filter(DBDiff.id == diff_id)
         .with_for_update()
         .first()
     )
@@ -121,12 +130,12 @@ def update_diff(
 
 @ROUTER.put("/hunks/{hunk_id}")
 def update_hunk(
-    hunk_id: ULID, request: UpdateHunkRequest, session: SessionDependency
+    hunk_id: PrefixedULID, request: UpdateHunkRequest, session: SessionDependency
 ) -> UpdateHunkResponse:
     db_hunk = (
         session.query(DBHunk)
         .options(selectinload(DBHunk.lines))
-        .filter(DBHunk.id == str(hunk_id))
+        .filter(DBHunk.id == hunk_id)
         .with_for_update()
         .first()
     )
@@ -149,8 +158,8 @@ def update_hunk(
 
 
 @ROUTER.delete("/diffs/{diff_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_diff(diff_id: ULID, session: SessionDependency) -> None:
-    db_diff = session.query(DBDiff).filter(DBDiff.id == str(diff_id)).first()
+def delete_diff(diff_id: PrefixedULID, session: SessionDependency) -> None:
+    db_diff = session.query(DBDiff).filter(DBDiff.id == diff_id).first()
     if not db_diff:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Diff not found"
