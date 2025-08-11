@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     database_connect_check_same_thread: bool = False
     database_poolclass: Literal["QueuePool", "StaticPool"] = "QueuePool"
     database_create_all: bool = False
+    port: int = 8000
+    host: str = "localhost"
 
     @property
     def git_hash(self) -> str:

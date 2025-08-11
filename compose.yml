@@ -7,5 +7,6 @@ services:
       - db:/etc/db
     environment:
       DATABASE_URL: "sqlite:////etc/db/diffswarm-dev.sqlite3"
+      HOST: 0.0.0.0
 volumes:
   db:

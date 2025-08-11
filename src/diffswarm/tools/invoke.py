@@ -9,10 +9,12 @@ from fastapi.testclient import TestClient
 from typing_extensions import _AnnotatedAlias  # type:ignore[reportPrivateUsage]
 
 from diffswarm.app import APP
+from diffswarm.app.settings import get_settings
 
 
 def invoke() -> str:
     """Stateless request to an API endpoint, by name or qualified name."""
+    settings = get_settings()
     route_name = sys.argv[1]
     route = next(
         r
@@ -34,7 +36,7 @@ def invoke() -> str:
             and (examples := body_meta.examples)
         ):
             body_example = examples[0]
-    with TestClient(APP, base_url="http://localhost:8000") as client:
+    with TestClient(APP, base_url=f"http://{settings.host}:{settings.port}") as client:
         response = client.request(
             method=route.methods.pop(),
             url=route.path,

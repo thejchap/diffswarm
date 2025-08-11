@@ -11,4 +11,4 @@ ARG GIT_HASH=dev
 RUN echo $GIT_HASH > REVISION
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --locked --no-editable --no-dev
-CMD ["/app/.venv/bin/fastapi", "run"]
+CMD ["/app/.venv/bin/diffswarm-server"]
