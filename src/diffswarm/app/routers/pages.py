@@ -24,8 +24,8 @@ ROUTER = APIRouter()
 def home(request: Request) -> HTMLResponse:
     url = str(request.url_for("home")).rstrip("/")
     snippet = f"""\
-diff <(echo "hello") <(echo "hello\\nworld") -u | curl --header 'Content-Type: text/plain' -X POST --data-binary @- {url}
-    """.strip()  # noqa: E501
+diff <(echo "foo") <(echo "foo\\nbar") -u | curl -X POST --data-binary @- {url}
+    """.strip()
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/index.html",
@@ -47,8 +47,6 @@ def get_diff(
         .one()
     )
     diff = Diff.from_db(db_diff)
-
-    # Fetch comments for this diff
     db_comments = (
         session.query(DBComment)
         .filter(DBComment.diff_id == diff_id)
@@ -56,7 +54,6 @@ def get_diff(
         .all()
     )
     comments = [Comment.from_db(db_comment) for db_comment in db_comments]
-
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/diff.html",
@@ -64,20 +61,7 @@ def get_diff(
     )
 
 
-@ROUTER.post(
-    "/",
-    response_class=PlainTextResponse,
-    status_code=HTTP_201_CREATED,
-    description="""\
-Create a new diff from a unified diff string
-
-# Example
-```sh
-diff <(echo "hello") <(echo "hello\nworld") -u | \
-curl --header 'Content-Type: text/plain' -X POST --data-binary @- localhost:8000
-```
-""".strip(),
-)
+@ROUTER.post("/", response_class=PlainTextResponse, status_code=HTTP_201_CREATED)
 def create_diff(
     req: Request,
     res: Response,
