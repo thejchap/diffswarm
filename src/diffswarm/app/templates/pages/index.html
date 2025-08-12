@@ -80,11 +80,36 @@
         const copyButton = this;
         const commandText = copyButton.dataset["snippet"];
         const copyTextSpan = document.getElementById("copy-text");
-        await navigator.clipboard.writeText(commandText);
-        copyTextSpan.textContent = "Copied!";
-        setTimeout(() => {
-          copyTextSpan.textContent = "Copy";
-        }, 2000);
+
+        try {
+          // Try modern clipboard API first (HTTPS required)
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(commandText);
+          } else {
+            // Fallback for non-HTTPS browsers
+            const textArea = document.createElement("textarea");
+            textArea.value = commandText;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-999999px";
+            textArea.style.top = "-999999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand("copy");
+            textArea.remove();
+          }
+
+          copyTextSpan.textContent = "Copied!";
+          setTimeout(() => {
+            copyTextSpan.textContent = "Copy";
+          }, 2000);
+        } catch (err) {
+          console.error("Failed to copy text: ", err);
+          copyTextSpan.textContent = "Copy failed";
+          setTimeout(() => {
+            copyTextSpan.textContent = "Copy";
+          }, 2000);
+        }
       });
   </script>
 {% endblock %}
