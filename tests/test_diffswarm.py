@@ -44,6 +44,25 @@ class TestPages:
         body = res.text
         assert "<html" in body
 
+    def test_delete_diff_pages(self, client: TestClient) -> None:
+        res = client.post(
+            "/",
+            content=DiffBase.HELLO_WORLD,
+            headers={"Content-Type": "text/plain"},
+        )
+        assert res.status_code == status.HTTP_201_CREATED
+        diff_id = res.headers["X-Diff-ID"]
+        res = client.get(f"/{diff_id}")
+        assert res.status_code == status.HTTP_200_OK
+        res = client.delete(f"/{diff_id}")
+        assert res.status_code == status.HTTP_204_NO_CONTENT
+        res = client.get(f"/{diff_id}")
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_delete_diff_not_found_pages(self, client: TestClient) -> None:
+        res = client.delete(f"/{generate_prefixed_ulid('d')}")
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+
 
 class TestAPI:
     def test_get_diff_invalid_id(self, client: TestClient) -> None:

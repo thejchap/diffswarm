@@ -2425,6 +2425,38 @@ function FileHeader() {
                 />`}
           </button>
           <button
+            onClick=${() => {
+              if (
+                window.confirm(
+                  "Are you sure you want to delete this diff? This action cannot be undone.",
+                )
+              ) {
+                fetch(`/${diff.value.id}`, {
+                  method: "DELETE",
+                })
+                  .then((response) => {
+                    if (response.ok) {
+                      window.location.href = "/";
+                    } else {
+                      console.error("Failed to delete diff");
+                      alert("Failed to delete diff. Please try again.");
+                    }
+                  })
+                  .catch((error) => {
+                    console.error("Error deleting diff:", error);
+                    alert("Error deleting diff. Please try again.");
+                  });
+              }
+            }}
+            class="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-red-200 dark:hover:border-red-700 cursor-pointer"
+            aria-label="Delete diff"
+            title="Delete Diff"
+          >
+            <${Trash2}
+              class="w-3.5 h-3.5 text-gray-400 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors"
+            />
+          </button>
+          <button
             onClick=${toggleAllHunks}
             class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm cursor-pointer"
             aria-label=${allVisibleHunksCollapsed

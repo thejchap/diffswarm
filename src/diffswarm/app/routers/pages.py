@@ -1,10 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Request, Response
+from fastapi import APIRouter, Body, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BeforeValidator
 from sqlalchemy.orm import selectinload
-from starlette.status import HTTP_201_CREATED
+from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT
 
 from diffswarm.app.database import DBComment, DBDiff, DBHunk, DBLine
 from diffswarm.app.dependencies import SessionDependency, SettingsDependency
@@ -108,3 +108,12 @@ def create_diff(
     session.commit()
     res.headers["X-Diff-ID"] = diff_id
     return f"{req.url_for('get_diff', diff_id=diff_id)}\n"
+
+
+@ROUTER.delete("/{diff_id}", status_code=HTTP_204_NO_CONTENT)
+def delete_diff(diff_id: PrefixedULID, session: SessionDependency) -> None:
+    db_diff = session.query(DBDiff).filter(DBDiff.id == diff_id).first()
+    if not db_diff:
+        raise HTTPException(status_code=404, detail="Diff not found")
+    session.delete(db_diff)
+    session.commit()
