@@ -2664,9 +2664,11 @@ function updateDocumentTitle(/** @type {Diff} */ diff) {
     (hunk) => hunk.completed_at != null,
   ).length;
   const totalCount = diff.hunks.length;
+  const isAllCompleted = totalCount > 0 && completedCount === totalCount;
 
   if (totalCount > 0 && diffName !== "diffswarm") {
-    document.title = `[${completedCount}/${totalCount}] ${diffName}`;
+    const completionPrefix = isAllCompleted ? "✅ " : "";
+    document.title = `${completionPrefix}[${completedCount}/${totalCount}] ${diffName}`;
   } else {
     document.title = diffName;
   }
