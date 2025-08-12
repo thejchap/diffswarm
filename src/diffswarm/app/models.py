@@ -67,7 +67,19 @@ class HunkHeader(NamedTuple):
     has_header_context: bool
 
 
+class LineBase(BaseModel):
+    """Base Line model without ID column for parsing."""
+
+    type: LineType
+    content: str
+    line_number_old: int | None = None
+    line_number_new: int | None = None
+
+
 class Line(BaseModel):
+    """Line model with ID column for database persistence."""
+
+    id_: PrefixedULID | None = Field(None, alias="id")
     type: LineType
     content: str
     line_number_old: int | None = None
@@ -77,6 +89,7 @@ class Line(BaseModel):
     def from_db(cls, db_line: DBLine) -> Self:
         """Create a Line from a database model."""
         return cls(
+            id=db_line.id,
             type=LineType(db_line.type),
             content=db_line.content,
             line_number_old=db_line.line_number_old,
@@ -84,7 +97,38 @@ class Line(BaseModel):
         )
 
 
+class HunkBase(DiffSwarmBaseModel):
+    """Base Hunk model without ID column for parsing."""
+
+    from_start: int = Field(..., ge=0)
+    from_count: int = Field(..., ge=0)
+    to_start: int = Field(..., ge=0)
+    to_count: int = Field(..., ge=0)
+    lines: list[LineBase]
+
+    @field_validator("lines")
+    @classmethod
+    def validate_line_counts(cls, v: Any, info: ValidationInfo) -> Any:  # noqa: ANN401
+        if "from_count" not in info.data or "to_count" not in info.data:
+            return v
+        from_count = info.data["from_count"]
+        to_count = info.data["to_count"]
+        delete_count = sum(1 for line in v if line.type == LineType.DELETE)
+        add_count = sum(1 for line in v if line.type == LineType.ADD)
+        context_count = sum(1 for line in v if line.type == LineType.CONTEXT)
+        del_context_count = delete_count + context_count
+        if from_count != del_context_count:
+            msg = f"Expected {from_count} from-lines, got {del_context_count}"
+            raise ValueError(msg)
+        if to_count != add_count + context_count:
+            msg = f"Expected {to_count} to-lines, got {add_count + context_count}"
+            raise ValueError(msg)
+        return v
+
+
 class Hunk(DiffSwarmBaseModel):
+    """Hunk model with ID column for database persistence."""
+
     model_config = ConfigDict(from_attributes=True)
     id_: PrefixedULID | None = Field(None, alias="id")
     name: str | None = None  # Display name, defaults to id
@@ -153,9 +197,9 @@ class DiffBase(DiffSwarmBaseModel):
     >>> len(diff.hunks[0].lines)
     2
     >>> diff.hunks[0].lines[0]
-    Line(type=<LineType.CONTEXT: 'CONTEXT'>, content='hello', line_number_old=1, line_number_new=1)
+    LineBase(type=<LineType.CONTEXT: 'CONTEXT'>, content='hello', line_number_old=1, line_number_new=1)
     >>> diff.hunks[0].lines[1]
-    Line(type=<LineType.ADD: 'ADD'>, content='world', line_number_old=None, line_number_new=2)
+    LineBase(type=<LineType.ADD: 'ADD'>, content='world', line_number_old=None, line_number_new=2)
     """  # noqa: E501
 
     HELLO_WORLD: ClassVar[str] = """\
@@ -171,7 +215,7 @@ class DiffBase(DiffSwarmBaseModel):
     from_timestamp: datetime | None = None
     to_filename: str = Field(..., min_length=1)
     to_timestamp: datetime | None = None
-    hunks: list[Hunk] = Field(..., min_length=1)
+    hunks: list[HunkBase] = Field(..., min_length=1)
 
     @classmethod
     def parse_bytes(cls, raw: bytes) -> Self:
@@ -204,13 +248,16 @@ class UnifiedDiffParser:
         if not hunks:
             msg = "No hunks found in diff"
             raise ValueError(msg)
+        # Convert HunkBase to Hunk for the Diff model compatibility
+        # Since DiffBase uses list[HunkBase], we need to handle this properly
+        diff_hunks = hunks  # These are already HunkBase instances
         return DiffBase(
             raw=raw,
             from_filename=from_info["filename"],
             from_timestamp=from_info["timestamp"],
             to_filename=to_info["filename"],
             to_timestamp=to_info["timestamp"],
-            hunks=hunks,
+            hunks=diff_hunks,
         )
 
     def _parse_from_header(self) -> dict[str, Any]:
@@ -249,9 +296,9 @@ class UnifiedDiffParser:
 
         return {"filename": filename, "timestamp": timestamp}
 
-    def _parse_hunks(self) -> list[Hunk]:
+    def _parse_hunks(self) -> list[HunkBase]:
         """Parse all hunks in the diff."""
-        hunks: list[Hunk] = []
+        hunks: list[HunkBase] = []
         self.advance()
         while self.current_line:
             if self.current_line.startswith("@@ "):
@@ -260,7 +307,7 @@ class UnifiedDiffParser:
                 self.advance()
         return hunks
 
-    def _parse_hunk(self) -> Hunk:
+    def _parse_hunk(self) -> HunkBase:
         """Parse single hunk: header + lines."""
         if not self.current_line:
             msg = "Expected hunk header, but reached end of input"
@@ -283,7 +330,7 @@ class UnifiedDiffParser:
             )
             if actual_from_lines < expected_from_lines:
                 # Add virtual context line at the beginning
-                virtual_line = Line(
+                virtual_line = LineBase(
                     type=LineType.CONTEXT,
                     content="",  # Empty content for virtual header context
                     line_number_old=header.from_start,
@@ -303,8 +350,7 @@ class UnifiedDiffParser:
                     ):
                         line.line_number_new += 1
 
-        return Hunk(
-            id=None,
+        return HunkBase(
             from_start=header.from_start,
             from_count=header.from_count,
             to_start=header.to_start,
@@ -355,9 +401,9 @@ class UnifiedDiffParser:
 
     def _parse_hunk_lines(
         self, from_start: int, to_start: int, from_count: int, to_count: int
-    ) -> list[Line]:
+    ) -> list[LineBase]:
         """Parse lines within a hunk until next hunk or end."""
-        lines: list[Line] = []
+        lines: list[LineBase] = []
         old_line_num = from_start
         new_line_num = to_start
 
@@ -413,30 +459,32 @@ class UnifiedDiffParser:
             self.advance()
         return lines
 
-    def _parse_hunk_line(self, line: str, old_line_num: int, new_line_num: int) -> Line:
+    def _parse_hunk_line(
+        self, line: str, old_line_num: int, new_line_num: int
+    ) -> LineBase:
         """Parse single line within hunk based on prefix."""
         if line.startswith(" "):
-            return Line(
+            return LineBase(
                 type=LineType.CONTEXT,
                 content=line[1:],
                 line_number_old=old_line_num,
                 line_number_new=new_line_num,
             )
         if line.startswith("-"):
-            return Line(
+            return LineBase(
                 type=LineType.DELETE,
                 content=line[1:],
                 line_number_old=old_line_num,
                 line_number_new=None,
             )
         if line.startswith("+"):
-            return Line(
+            return LineBase(
                 type=LineType.ADD,
                 content=line[1:],
                 line_number_old=None,
                 line_number_new=new_line_num,
             )
-        return Line(
+        return LineBase(
             type=LineType.CONTEXT,
             content=line,
             line_number_old=old_line_num,

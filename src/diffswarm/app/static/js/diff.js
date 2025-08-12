@@ -85,7 +85,9 @@ const { diffPrefetch: DIFF_PREFETCH, commentsPrefetch: COMMENTS_PREFETCH } =
  *  isEditing: import("@preact/signals").Signal<boolean>,
  *  editValue: import("@preact/signals").Signal<string>,
  *  collapsedHunks: import("@preact/signals").Signal<Set<number>>,
- *  currentFilter: import("@preact/signals").Signal<FilterType>
+ *  currentFilter: import("@preact/signals").Signal<FilterType>,
+ *  searchQuery: import("@preact/signals").Signal<string>,
+ *  debouncedSearchQuery: import("@preact/signals").Signal<string>
  * }} AppStateType
  */
 
@@ -135,6 +137,10 @@ function createAppState() {
   // Filter state
   const currentFilter = signal(/** @type {FilterType} */ ("all"));
 
+  // Search state
+  const searchQuery = signal("");
+  const debouncedSearchQuery = signal("");
+
   return {
     diff,
     comments,
@@ -142,6 +148,8 @@ function createAppState() {
     editValue,
     collapsedHunks,
     currentFilter,
+    searchQuery,
+    debouncedSearchQuery,
   };
 }
 
@@ -196,6 +204,42 @@ function Copy({ class: className }) {
   >
     <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
     <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Search({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.35-4.35" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function X({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
   </svg>`;
 }
 
@@ -269,24 +313,6 @@ function Plus({ class: className }) {
   >
     <path d="M5 12h14" />
     <path d="M12 5v14" />
-  </svg>`;
-}
-
-/** @param {{ class: string }} props */
-function X({ class: className }) {
-  return html`<svg
-    class="${className}"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <path d="m18 6-12 12" />
-    <path d="m6 6 12 12" />
   </svg>`;
 }
 
@@ -400,6 +426,170 @@ function Circle({ class: className }) {
   >
     <circle cx="12" cy="12" r="10" />
   </svg>`;
+}
+
+/**
+ * SearchBar component for search input with keyboard shortcuts
+ * @param {{ searchQuery: string, onSearchChange: (query: string) => void, resultCount: number, totalHunks: number, isSearching: boolean }} props
+ */
+function SearchBar({
+  searchQuery,
+  onSearchChange,
+  resultCount,
+  totalHunks,
+  isSearching,
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
+
+  // Keyboard shortcut to focus search (Cmd/Ctrl + K)
+  useEffect(() => {
+    const handleKeyDown = (/** @type {KeyboardEvent} */ e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+      if (e.key === "Escape" && isFocused) {
+        inputRef.current?.blur();
+        if (searchQuery) {
+          onSearchChange("");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFocused, searchQuery, onSearchChange]);
+
+  const clearSearch = () => {
+    onSearchChange("");
+    inputRef.current?.focus();
+  };
+
+  return html`
+    <div class="relative flex-1 w-full">
+      <div
+        class=${`relative flex items-center transition-all duration-200 ${
+          isFocused
+            ? "ring-2 ring-blue-500 dark:ring-blue-400 bg-white dark:bg-monokai-surface"
+            : "bg-gray-50 dark:bg-monokai-elevated hover:bg-gray-100 dark:hover:bg-monokai-surface"
+        } border border-gray-200 dark:border-monokai-border rounded-lg`}
+      >
+        <${Search}
+          class="w-4 h-4 text-gray-400 dark:text-monokai-muted ml-3 flex-shrink-0"
+        />
+        <input
+          ref=${inputRef}
+          type="text"
+          value=${searchQuery}
+          onInput=${(/** @type {Event} */ e) =>
+            onSearchChange(/** @type {HTMLInputElement} */ (e.target).value)}
+          onFocus=${() => setIsFocused(true)}
+          onBlur=${() => setIsFocused(false)}
+          placeholder="Search hunks and content... (⌘K)"
+          class="flex-1 px-3 py-2 text-sm bg-transparent text-gray-900 dark:text-monokai-text placeholder-gray-500 dark:placeholder-monokai-muted focus:outline-none"
+        />
+        ${searchQuery &&
+        html`
+          <button
+            onClick=${clearSearch}
+            class="p-1 mr-2 rounded-md hover:bg-gray-200 dark:hover:bg-monokai-border transition-colors"
+            aria-label="Clear search"
+          >
+            <${X} class="w-3.5 h-3.5 text-gray-400 dark:text-monokai-muted" />
+          </button>
+        `}
+      </div>
+
+      ${searchQuery &&
+      html`
+        <div
+          class="absolute top-full left-0 mt-1 px-2 py-1 bg-white dark:bg-monokai-surface border border-gray-200 dark:border-monokai-border rounded-md shadow-sm text-xs text-gray-600 dark:text-monokai-muted whitespace-nowrap"
+        >
+          ${isSearching
+            ? "Searching..."
+            : resultCount > 0
+              ? `${resultCount} of ${totalHunks} hunks match`
+              : "No matches found"}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/**
+ * SearchHighlight component for highlighting search matches in text
+ * @param {{ text: string, searchQuery: string, className?: string }} props
+ */
+function SearchHighlight({ text, searchQuery, className = "" }) {
+  if (!searchQuery.trim()) {
+    return html`<span class="${className}">${text}</span>`;
+  }
+
+  const regex = new RegExp(
+    `(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+    "gi",
+  );
+  const parts = text.split(regex);
+
+  return html`
+    <span class="${className}">
+      ${parts.map((part, index) =>
+        regex.test(part)
+          ? html`
+              <mark
+                key=${index}
+                class="bg-yellow-200 dark:bg-yellow-900/50 text-yellow-900 dark:text-yellow-200 px-0.5 rounded-sm font-medium"
+              >
+                ${part}
+              </mark>
+            `
+          : part,
+      )}
+    </span>
+  `;
+}
+
+/**
+ * CopyButton component for copying text to clipboard with visual feedback
+ * @param {{ text: string, ariaLabel?: string, title?: string, className?: string }} props
+ */
+function CopyButton({
+  text,
+  ariaLabel = "Copy to clipboard",
+  title,
+  className = "",
+}) {
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = async (/** @type {Event} */ e) => {
+    e.stopPropagation(); // Prevent event bubbling
+    try {
+      await navigator.clipboard.writeText(text);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  return html`
+    <button
+      onClick=${handleCopy}
+      class="${className ||
+      "p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-monokai-elevated transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-gray-200 dark:hover:border-gray-600"} cursor-pointer"
+      aria-label=${ariaLabel}
+      title=${title || ariaLabel}
+    >
+      ${isCopied
+        ? html`<${Check}
+            class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 transition-colors"
+          />`
+        : html`<${Copy}
+            class="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors"
+          />`}
+    </button>
+  `;
 }
 
 /**
@@ -555,6 +745,7 @@ function HunkFilter({
  * @param {{ hunk: Hunk, onRename: (hunkId: string, newName: string) => Promise<void> }} props
  */
 function HunkRename({ hunk, onRename }) {
+  const appState = useContext(AppState);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -670,7 +861,10 @@ function HunkRename({ hunk, onRename }) {
         class="text-sm font-code font-medium text-gray-900 dark:text-monokai-text cursor-pointer hover:text-gray-900 dark:hover:text-monokai-text"
         title="Click to rename hunk"
       >
-        ${hunk.name || hunk.id}
+        <${SearchHighlight}
+          text=${hunk.name || hunk.id}
+          searchQuery=${appState?.debouncedSearchQuery.value || ""}
+        />
       </span>
       <button
         onClick=${handleEdit}
@@ -1048,6 +1242,7 @@ function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
  * @param {any} props
  */
 function CommentItem({ comment, depth = 0, onReply, onDelete }) {
+  const appState = useContext(AppState);
   const { getRepliesForComment, addComment } = useComments();
   const replies = getRepliesForComment(comment.id);
   const maxDepth = 3;
@@ -1136,7 +1331,10 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
           <div
             class="text-gray-700 dark:text-gray-300 text-sm leading-relaxed mb-2"
           >
-            ${comment.text}
+            <${SearchHighlight}
+              text=${comment.text}
+              searchQuery=${appState?.debouncedSearchQuery.value || ""}
+            />
           </div>
         </div>
       </div>
@@ -1203,6 +1401,7 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
  */
 /** @param {{ hunk: Hunk, hunkId: string, isCollapsed: boolean, onToggleCollapse: () => void }} props */
 function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
+  const appState = useContext(AppState);
   const { getTotalHunkCommentsCount, addComment } = useComments();
   const [showCommentForm, setShowCommentForm] = useState(false);
   const additions = hunk.lines.filter((line) => line.type === "ADD").length;
@@ -1342,8 +1541,10 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                 <span
                   class="font-code text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded"
                 >
-                  @@ -${hunk.from_start},${hunk.from_count}
-                  +${hunk.to_start},${hunk.to_count} @@
+                  <${SearchHighlight}
+                    text=${`@@ -${hunk.from_start},${hunk.from_count} +${hunk.to_start},${hunk.to_count} @@`}
+                    searchQuery=${appState?.debouncedSearchQuery.value || ""}
+                  />
                 </span>
                 <div class="flex items-center gap-2 text-xs">
                   <span
@@ -1375,7 +1576,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
             <div class="flex items-center gap-1 ml-3">
               <button
                 onClick=${onAddComment}
-                class="p-2 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all duration-200 group hover:scale-105 shadow-sm"
+                class="p-2 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all duration-200 group hover:scale-105 shadow-sm cursor-pointer"
                 aria-label="Add comment to hunk"
                 title="Add comment to hunk"
               >
@@ -1383,19 +1584,15 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                   class="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 transition-colors"
                 />
               </button>
-              <button
-                onClick=${onCopy}
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm"
-                aria-label="Copy hunk"
-                title="Copy hunk"
-              >
-                <Copy
-                  class=${`w-3.5 h-3.5 transition-colors ${isCopied ? "text-emerald-500" : "text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"}`}
-                />
-              </button>
+              <${CopyButton}
+                text=${hunk.id}
+                ariaLabel="Copy hunk ID"
+                title="Copy Hunk ID"
+                className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
+              />
               <button
                 onClick=${onShare}
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm"
+                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm cursor-pointer"
                 aria-label="Share hunk"
                 title="Share hunk"
               >
@@ -1405,7 +1602,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
               </button>
               <button
                 onClick=${onToggleCollapse}
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 hover:scale-105 shadow-sm"
+                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 hover:scale-105 shadow-sm cursor-pointer"
                 aria-label=${`${isCollapsed ? "Expand" : "Collapse"} hunk details`}
               >
                 ${isCollapsed
@@ -1448,6 +1645,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
 
 /** @param {any} props */
 function Line({ line, hunkId, lineIndex }) {
+  const appState = useContext(AppState);
   const {
     getCommentsForLine,
     addComment,
@@ -1539,10 +1737,13 @@ function Line({ line, hunkId, lineIndex }) {
         <div
           class="flex-1 px-3 py-1 font-code text-xs leading-relaxed whitespace-pre-wrap break-all"
         >
-          ${line.content}
+          <${SearchHighlight}
+            text=${line.content}
+            searchQuery=${appState?.debouncedSearchQuery.value || ""}
+          />
         </div>
 
-        <div class="w-14 px-2 py-1 flex items-center justify-center gap-1">
+        <div class="w-20 px-2 py-1 flex items-center justify-center gap-1">
           ${totalComments > 0 &&
           html`<div
             class="w-4 h-4 rounded-full bg-blue-500 dark:bg-blue-600 flex items-center justify-center shadow-sm"
@@ -1551,6 +1752,16 @@ function Line({ line, hunkId, lineIndex }) {
               ${totalComments}
             </span>
           </div>`}
+          <div
+            class="opacity-0 group-hover:opacity-100 transition-all duration-200"
+          >
+            <${CopyButton}
+              text=${line.id}
+              ariaLabel="Copy line ID"
+              title="Copy Line ID"
+              className="p-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
+            />
+          </div>
           <div
             class="opacity-0 group-hover:opacity-100 p-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 transition-all duration-200"
           >
@@ -2018,9 +2229,15 @@ function FileHeader() {
 
         <!-- Right side controls -->
         <div class="flex items-center gap-1">
+          <${CopyButton}
+            text=${diff.value.id}
+            ariaLabel="Copy diff ID"
+            title="Copy Diff ID"
+            className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
+          />
           <button
             onClick=${toggleAllHunks}
-            class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm"
+            class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm cursor-pointer"
             aria-label=${allVisibleHunksCollapsed
               ? "Expand all hunks"
               : "Collapse all hunks"}
@@ -2045,19 +2262,23 @@ function FileHeader() {
 
       <!-- search wrapper -->
       <div class="flex items-center gap-4">
-        <div class="flex-1">
-          <div class="relative flex-1 w-full">
-            <div
-              class="relative flex items-center transition-all duration-200 border border-gray-200 dark:border-monokai-border rounded-lg bg-gray-50 dark:bg-monokai-elevated hover:bg-gray-100 dark:hover:bg-monokai-surface"
-            >
-              <input
-                type="text"
-                placeholder="Search hunks and content... (⌘K)"
-                class="flex-1 px-3 py-2 text-sm bg-transparent text-gray-900 dark:text-monokai-text placeholder-gray-500 dark:placeholder-monokai-muted focus:outline-none"
-              />
-            </div>
-          </div>
-        </div>
+        <${SearchBar}
+          searchQuery=${appState.searchQuery.value}
+          onSearchChange=${(/** @type {string} */ query) => {
+            appState.searchQuery.value = query;
+          }}
+          resultCount=${diff.value.hunks.filter((hunk, index) =>
+            searchInHunk(
+              hunk,
+              appState.debouncedSearchQuery.value,
+              appState.comments.value,
+              index,
+            ),
+          ).length}
+          totalHunks=${diff.value.hunks.length}
+          isSearching=${appState.searchQuery.value !==
+          appState.debouncedSearchQuery.value}
+        />
         <${HunkFilter}
           currentFilter=${appState.currentFilter.value}
           onFilterChange=${(/** @type {FilterType} */ filter) => {
@@ -2074,24 +2295,94 @@ function FileHeader() {
   `;
 }
 
+/**
+ * Search helper function to check if hunk matches search query
+ * @param {Hunk} hunk - The hunk to search
+ * @param {string} query - The search query
+ * @param {Comment[]} comments - All comments for the diff
+ * @param {number} hunkIndex - The hunk's index in the diff
+ * @returns {boolean} - Whether the hunk matches the search
+ */
+function searchInHunk(hunk, query, comments, hunkIndex) {
+  if (!query.trim()) return true;
+  const searchTerm = query.toLowerCase();
+
+  // Search in hunk ID
+  if (hunk.id && hunk.id.toLowerCase().includes(searchTerm)) return true;
+
+  // Search in hunk name
+  if (hunk.name && hunk.name.toLowerCase().includes(searchTerm)) return true;
+
+  // Create hunk header for search (like "@@ -1,7 +1,7 @@")
+  const header = `@@ -${hunk.from_start},${hunk.from_count} +${hunk.to_start},${hunk.to_count} @@`;
+  if (header.toLowerCase().includes(searchTerm)) return true;
+
+  // Search in line content
+  if (
+    hunk.lines.some((line) => line.content.toLowerCase().includes(searchTerm))
+  ) {
+    return true;
+  }
+
+  // Search in comments for this hunk
+  const hunkComments = comments.filter(
+    (comment) => comment.hunkId === `hunk-${hunkIndex}`,
+  );
+  if (
+    hunkComments.some(
+      (comment) =>
+        comment.text.toLowerCase().includes(searchTerm) ||
+        comment.author.toLowerCase().includes(searchTerm) ||
+        comment.id.toLowerCase().includes(searchTerm),
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function App() {
   const diff = useDiff();
   const appState = useContext(AppState);
   if (!appState) throw new Error("App must be used within AppState");
 
-  // Filter hunks based on current filter
+  // Add debouncing for search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      appState.debouncedSearchQuery.value = appState.searchQuery.value;
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [appState.searchQuery.value]);
+
+  // Filter hunks based on current filter and search
   const filteredHunks = diff.value.hunks.filter((hunk, index) => {
     const isCompleted = hunk.completed_at != null;
 
+    // Apply completion filter
+    let passesFilter = true;
     switch (appState.currentFilter.value) {
       case "completed":
-        return isCompleted;
+        passesFilter = isCompleted;
+        break;
       case "uncompleted":
-        return !isCompleted;
+        passesFilter = !isCompleted;
+        break;
       case "all":
       default:
-        return true;
+        passesFilter = true;
+        break;
     }
+
+    // Apply search filter
+    const passesSearch = searchInHunk(
+      hunk,
+      appState.debouncedSearchQuery.value,
+      appState.comments.value,
+      index,
+    );
+
+    return passesFilter && passesSearch;
   });
 
   return html`

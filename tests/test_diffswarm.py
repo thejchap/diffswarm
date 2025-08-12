@@ -10,6 +10,9 @@ from starlette import status
 from diffswarm import APP
 from diffswarm.app.models import DiffBase, PrefixedULID, generate_prefixed_ulid
 
+# Constants
+PREFIXED_ULID_LENGTH = 28  # prefix + hyphen + 26 character ULID
+
 
 @pytest.fixture(name="client")
 def client_fixture() -> Generator[TestClient]:
@@ -91,6 +94,14 @@ class TestAPI:
         assert lines[1]["line_number_old"] is None
         assert lines[1]["line_number_new"] == expected_new_line_number
 
+        # Test that line IDs are returned
+        assert "id" in lines[0]
+        assert "id" in lines[1]
+        assert lines[0]["id"].startswith("l-")
+        assert lines[1]["id"].startswith("l-")
+        assert len(lines[0]["id"]) == PREFIXED_ULID_LENGTH
+        assert len(lines[1]["id"]) == PREFIXED_ULID_LENGTH
+
     def test_database_storage_and_retrieval(self, client: TestClient) -> None:
         expected_to_count = 2
         expected_line_count = 2
@@ -128,6 +139,14 @@ class TestAPI:
         assert add_line["content"] == "world"
         assert add_line["line_number_old"] is None
         assert add_line["line_number_new"] == expected_add_line_number
+
+        # Test that line IDs are present and properly formatted
+        assert "id" in context_line
+        assert "id" in add_line
+        assert context_line["id"].startswith("l-")
+        assert add_line["id"].startswith("l-")
+        assert len(context_line["id"]) == PREFIXED_ULID_LENGTH
+        assert len(add_line["id"]) == PREFIXED_ULID_LENGTH
 
     def test_create_comment(self, client: TestClient) -> None:
         res = client.post(
