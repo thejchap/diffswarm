@@ -13,6 +13,21 @@ const { diffPrefetch: DIFF_PREFETCH, commentsPrefetch: COMMENTS_PREFETCH } =
   $APP.dataset;
 
 /**
+ * Updates URL search parameter without page reload
+ * @param {string} key
+ * @param {string} value
+ */
+function updateURLParameter(key, value) {
+  const url = new URL(window.location.href);
+  if (value && value.trim()) {
+    url.searchParams.set(key, value);
+  } else {
+    url.searchParams.delete(key);
+  }
+  window.history.replaceState({}, "", url);
+}
+
+/**
  * @typedef {{
  *  type: "ADD" | "DELETE" | "CONTEXT",
  *  content: string,
@@ -137,9 +152,11 @@ function createAppState() {
   // Filter state
   const currentFilter = signal(/** @type {FilterType} */ ("all"));
 
-  // Search state
-  const searchQuery = signal("");
-  const debouncedSearchQuery = signal("");
+  // Search state - initialize from URL parameter
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialSearchQuery = urlParams.get("search") || "";
+  const searchQuery = signal(initialSearchQuery);
+  const debouncedSearchQuery = signal(initialSearchQuery);
 
   return {
     diff,
@@ -240,6 +257,24 @@ function X({ class: className }) {
   >
     <path d="M18 6 6 18" />
     <path d="m6 6 12 12" />
+  </svg>`;
+}
+
+/** @param {{ class: string }} props */
+function Link({ class: className }) {
+  return html`<svg
+    class="${className}"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
   </svg>`;
 }
 
@@ -491,28 +526,26 @@ function SearchBar({
         />
         ${searchQuery &&
         html`
-          <button
-            onClick=${clearSearch}
-            class="p-1 mr-2 rounded-md hover:bg-gray-200 dark:hover:bg-monokai-border transition-colors"
-            aria-label="Clear search"
-          >
-            <${X} class="w-3.5 h-3.5 text-gray-400 dark:text-monokai-muted" />
-          </button>
+          <div class="flex items-center gap-2 px-2">
+            <span
+              class="text-xs text-gray-500 dark:text-monokai-muted whitespace-nowrap"
+            >
+              ${isSearching
+                ? "Searching..."
+                : resultCount > 0
+                  ? `${resultCount} of ${totalHunks} hunks match`
+                  : "No matches found"}
+            </span>
+            <button
+              onClick=${clearSearch}
+              class="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-monokai-border transition-colors"
+              aria-label="Clear search"
+            >
+              <${X} class="w-3.5 h-3.5 text-gray-400 dark:text-monokai-muted" />
+            </button>
+          </div>
         `}
       </div>
-
-      ${searchQuery &&
-      html`
-        <div
-          class="absolute top-full left-0 mt-1 px-2 py-1 bg-white dark:bg-monokai-surface border border-gray-200 dark:border-monokai-border rounded-md shadow-sm text-xs text-gray-600 dark:text-monokai-muted whitespace-nowrap"
-        >
-          ${isSearching
-            ? "Searching..."
-            : resultCount > 0
-              ? `${resultCount} of ${totalHunks} hunks match`
-              : "No matches found"}
-        </div>
-      `}
     </div>
   `;
 }
@@ -1274,13 +1307,25 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
     onDelete(comment.id);
   };
 
+  const handleTimestampClick = () => {
+    if (appState) {
+      appState.searchQuery.value = comment.id;
+    }
+  };
+
   const isRootComment = depth === 0;
   const hasReplies = replies.length > 0;
+  const matchesSearch = commentMatchesSearch(
+    comment,
+    appState?.debouncedSearchQuery.value || "",
+  );
 
   return html`
     <div
       class="${isRootComment
         ? "border-b border-gray-100 dark:border-gray-800 pb-4 mb-4"
+        : ""} ${matchesSearch
+        ? "ring-2 ring-yellow-400 dark:ring-yellow-500 rounded-lg p-2 bg-yellow-50 dark:bg-yellow-900/10"
         : ""}"
     >
       <div class="flex gap-3 ${depth > 0 ? "ml-4" : ""}">
@@ -1302,9 +1347,13 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
             <span class="font-medium text-gray-900 dark:text-gray-100 text-sm">
               ${comment.author}
             </span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">
+            <button
+              onClick=${handleTimestampClick}
+              class="text-xs text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors"
+              title="Search for this comment"
+            >
               ${formatTimestamp(comment.timestamp)}
-            </span>
+            </button>
             <div class="ml-auto">
               <${CommentMenu}
                 onReply=${handleReply}
@@ -1404,6 +1453,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
   const appState = useContext(AppState);
   const { getTotalHunkCommentsCount, addComment } = useComments();
   const [showCommentForm, setShowCommentForm] = useState(false);
+  const [isLinkCopied, setIsLinkCopied] = useState(false);
   const additions = hunk.lines.filter((line) => line.type === "ADD").length;
   const deletions = hunk.lines.filter((line) => line.type === "DELETE").length;
   const commentCount = getTotalHunkCommentsCount(hunkId);
@@ -1416,6 +1466,10 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
   const onCopy = () => {};
   const onShare = () => {};
   const diff = useDiff();
+  const matchesSearch = hunkMatchesSearch(
+    hunk,
+    appState?.debouncedSearchQuery.value || "",
+  );
 
   const onToggleComplete = async () => {
     try {
@@ -1508,7 +1562,9 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
 
   return html`
     <div
-      class="px-4 py-3 bg-gray-100/50 dark:bg-gray-800/30 border-b border-gray-200/50 dark:border-gray-700/50"
+      class="px-4 py-3 bg-gray-100/50 dark:bg-gray-800/30 border-b border-gray-200/50 dark:border-gray-700/50 ${matchesSearch
+        ? "ring-2 ring-yellow-400 dark:ring-yellow-500 bg-yellow-50 dark:bg-yellow-900/10"
+        : ""}"
     >
       <div class="flex items-start gap-3">
         <button
@@ -1591,14 +1647,27 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                 className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
               />
               <button
-                onClick=${onShare}
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm cursor-pointer"
-                aria-label="Share hunk"
-                title="Share hunk"
+                onClick=${async () => {
+                  try {
+                    const link = `${window.location.origin}${window.location.pathname}?search=${encodeURIComponent(hunk.id || "")}`;
+                    await navigator.clipboard.writeText(link);
+                    setIsLinkCopied(true);
+                    setTimeout(() => setIsLinkCopied(false), 2000);
+                  } catch (err) {
+                    console.error("Failed to copy link:", err);
+                  }
+                }}
+                class="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
+                aria-label="Copy link to hunk"
+                title="Copy Link to Hunk"
               >
-                <Share2
-                  class="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors"
-                />
+                ${isLinkCopied
+                  ? html`<${Check}
+                      class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 transition-colors"
+                    />`
+                  : html`<${Link}
+                      class="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors"
+                    />`}
               </button>
               <button
                 onClick=${onToggleCollapse}
@@ -2072,6 +2141,7 @@ function FileHeader() {
   const diff = useDiff();
   const appState = useContext(AppState);
   if (!appState) throw new Error("FileHeader must be used within AppState");
+  const [isFileLinkCopied, setIsFileLinkCopied] = useState(false);
 
   // Calculate completion statistics
   const completedCount = diff.value.hunks.filter(
@@ -2236,6 +2306,29 @@ function FileHeader() {
             className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
           />
           <button
+            onClick=${async () => {
+              try {
+                const link = `${window.location.origin}${window.location.pathname}`;
+                await navigator.clipboard.writeText(link);
+                setIsFileLinkCopied(true);
+                setTimeout(() => setIsFileLinkCopied(false), 2000);
+              } catch (err) {
+                console.error("Failed to copy link:", err);
+              }
+            }}
+            class="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
+            aria-label="Copy link to file"
+            title="Copy Link to File"
+          >
+            ${isFileLinkCopied
+              ? html`<${Check}
+                  class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 transition-colors"
+                />`
+              : html`<${Link}
+                  class="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors"
+                />`}
+          </button>
+          <button
             onClick=${toggleAllHunks}
             class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm cursor-pointer"
             aria-label=${allVisibleHunksCollapsed
@@ -2342,6 +2435,32 @@ function searchInHunk(hunk, query, comments, hunkIndex) {
   return false;
 }
 
+/**
+ * Check if a comment ID matches the search query
+ * @param {Comment} comment - The comment to check
+ * @param {string} query - The search query
+ * @returns {boolean} - Whether the comment ID matches the search
+ */
+function commentMatchesSearch(comment, query) {
+  if (!query.trim()) return false;
+  const searchTerm = query.toLowerCase();
+
+  return comment.id.toLowerCase() === searchTerm;
+}
+
+/**
+ * Check if a hunk ID matches the search query
+ * @param {Hunk} hunk - The hunk to check
+ * @param {string} query - The search query
+ * @returns {boolean} - Whether the hunk ID matches the search
+ */
+function hunkMatchesSearch(hunk, query) {
+  if (!query.trim()) return false;
+  const searchTerm = query.toLowerCase();
+
+  return !!(hunk.id && hunk.id.toLowerCase() === searchTerm);
+}
+
 function App() {
   const diff = useDiff();
   const appState = useContext(AppState);
@@ -2353,6 +2472,11 @@ function App() {
       appState.debouncedSearchQuery.value = appState.searchQuery.value;
     }, 300);
     return () => clearTimeout(timer);
+  }, [appState.searchQuery.value]);
+
+  // Sync search query with URL parameter
+  useEffect(() => {
+    updateURLParameter("search", appState.searchQuery.value);
   }, [appState.searchQuery.value]);
 
   // Filter hunks based on current filter and search
