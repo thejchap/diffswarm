@@ -29,6 +29,7 @@ function updateURLParameter(key, value) {
 
 /**
  * @typedef {{
+ *  id: string,
  *  type: "ADD" | "DELETE" | "CONTEXT",
  *  content: string,
  *  line_number_old: number | null,
@@ -101,8 +102,7 @@ function updateURLParameter(key, value) {
  *  editValue: import("@preact/signals").Signal<string>,
  *  collapsedHunks: import("@preact/signals").Signal<Set<number>>,
  *  currentFilter: import("@preact/signals").Signal<FilterType>,
- *  searchQuery: import("@preact/signals").Signal<string>,
- *  debouncedSearchQuery: import("@preact/signals").Signal<string>
+ *  searchQuery: import("@preact/signals").Signal<string>
  * }} AppStateType
  */
 
@@ -156,7 +156,6 @@ function createAppState() {
   const urlParams = new URLSearchParams(window.location.search);
   const initialSearchQuery = urlParams.get("search") || "";
   const searchQuery = signal(initialSearchQuery);
-  const debouncedSearchQuery = signal(initialSearchQuery);
 
   return {
     diff,
@@ -166,8 +165,24 @@ function createAppState() {
     collapsedHunks,
     currentFilter,
     searchQuery,
-    debouncedSearchQuery,
   };
+}
+
+/**
+ * Converts a hunk to its textual unified diff representation
+ * @param {Hunk} hunk - The hunk to convert
+ * @returns {string} - The hunk as text
+ */
+function hunkToText(hunk) {
+  const header = `@@ -${hunk.from_start},${hunk.from_count} +${hunk.to_start},${hunk.to_count} @@`;
+  const lines = hunk.lines
+    .map((line) => {
+      const prefix =
+        line.type === "ADD" ? "+" : line.type === "DELETE" ? "-" : " ";
+      return prefix + line.content;
+    })
+    .join("\n");
+  return header + "\n" + lines;
 }
 
 // Icon components using Lucide icons
@@ -538,7 +553,7 @@ function SearchBar({
             </span>
             <button
               onClick=${clearSearch}
-              class="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-monokai-border transition-colors"
+              class="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-monokai-border transition-colors cursor-pointer"
               aria-label="Clear search"
             >
               <${X} class="w-3.5 h-3.5 text-gray-400 dark:text-monokai-muted" />
@@ -626,6 +641,49 @@ function CopyButton({
 }
 
 /**
+ * CopyLinkButton component for copying line link to clipboard with visual feedback
+ * @param {{ lineId: string, ariaLabel?: string, title?: string, className?: string }} props
+ */
+function CopyLinkButton({
+  lineId,
+  ariaLabel = "Copy link to line",
+  title,
+  className = "",
+}) {
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopyLink = async (/** @type {Event} */ e) => {
+    e.stopPropagation(); // Prevent event bubbling
+    try {
+      const link = `${window.location.origin}${window.location.pathname}?search=${encodeURIComponent(lineId || "")}`;
+      await navigator.clipboard.writeText(link);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy link:", err);
+    }
+  };
+
+  return html`
+    <button
+      onClick=${handleCopyLink}
+      class="${className ||
+      "p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-monokai-elevated transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-gray-200 dark:hover:border-gray-600"} cursor-pointer"
+      aria-label=${ariaLabel}
+      title=${title || ariaLabel}
+    >
+      ${isCopied
+        ? html`<${Check}
+            class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 transition-colors"
+          />`
+        : html`<${Link}
+            class="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors"
+          />`}
+    </button>
+  `;
+}
+
+/**
  * Hunk filter component with dropdown
  * @param {{ currentFilter: FilterType, onFilterChange: (filter: FilterType) => void, completedCount: number, uncompletedCount: number, totalCount: number }} props
  */
@@ -700,7 +758,7 @@ function HunkFilter({
       <button
         ref=${buttonRef}
         onClick=${handleToggle}
-        class="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        class="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
         aria-label="Filter hunks"
       >
         ${currentOption &&
@@ -896,7 +954,7 @@ function HunkRename({ hunk, onRename }) {
       >
         <${SearchHighlight}
           text=${hunk.name || hunk.id}
-          searchQuery=${appState?.debouncedSearchQuery.value || ""}
+          searchQuery=${appState?.searchQuery.value || ""}
         />
       </span>
       <button
@@ -1052,6 +1110,11 @@ function useComments() {
         idsToDelete.has(comment.id),
       );
 
+      // Check if current search query matches any comment being deleted
+      const currentSearchQuery = ctx.searchQuery.value;
+      const shouldClearSearch =
+        currentSearchQuery.trim() && idsToDelete.has(currentSearchQuery.trim());
+
       // Optimistically remove comments from local state
       comments.value = originalComments.filter(
         (comment) => !idsToDelete.has(comment.id),
@@ -1065,6 +1128,11 @@ function useComments() {
         // Rollback: restore deleted comments on failure
         comments.value = originalComments;
         console.error("Failed to delete comment:", await response.text());
+      } else {
+        // Clear search query if it matched the deleted comment
+        if (shouldClearSearch) {
+          ctx.searchQuery.value = "";
+        }
       }
     } catch (error) {
       console.error("Error deleting comment:", error);
@@ -1215,7 +1283,7 @@ function CommentForm({
             <button
               type="submit"
               disabled=${!commentText.trim()}
-              class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors"
             >
               Comment
             </button>
@@ -1317,7 +1385,7 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
   const hasReplies = replies.length > 0;
   const matchesSearch = commentMatchesSearch(
     comment,
-    appState?.debouncedSearchQuery.value || "",
+    appState?.searchQuery.value || "",
   );
 
   return html`
@@ -1382,7 +1450,7 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
           >
             <${SearchHighlight}
               text=${comment.text}
-              searchQuery=${appState?.debouncedSearchQuery.value || ""}
+              searchQuery=${appState?.searchQuery.value || ""}
             />
           </div>
         </div>
@@ -1468,7 +1536,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
   const diff = useDiff();
   const matchesSearch = hunkMatchesSearch(
     hunk,
-    appState?.debouncedSearchQuery.value || "",
+    appState?.searchQuery.value || "",
   );
 
   const onToggleComplete = async () => {
@@ -1599,7 +1667,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                 >
                   <${SearchHighlight}
                     text=${`@@ -${hunk.from_start},${hunk.from_count} +${hunk.to_start},${hunk.to_count} @@`}
-                    searchQuery=${appState?.debouncedSearchQuery.value || ""}
+                    searchQuery=${appState?.searchQuery.value || ""}
                   />
                 </span>
                 <div class="flex items-center gap-2 text-xs">
@@ -1641,9 +1709,9 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                 />
               </button>
               <${CopyButton}
-                text=${hunk.id}
-                ariaLabel="Copy hunk ID"
-                title="Copy Hunk ID"
+                text=${hunkToText(hunk)}
+                ariaLabel="Copy hunk content"
+                title="Copy Hunk Content"
                 className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
               />
               <button
@@ -1742,16 +1810,35 @@ function Line({ line, hunkId, lineIndex }) {
    * @param {any} type
    */
   const getLineStyles = (type) => {
+    const searchQuery = appState?.searchQuery.value || "";
+    const isHighlighted =
+      searchQuery.trim() && line.id.toLowerCase() === searchQuery.toLowerCase();
+
+    let baseClasses;
     switch (type) {
       case "ADD":
-        return "diff-add border-l-2 transition-diff cursor-pointer";
+        baseClasses = "diff-add border-l-2 transition-diff cursor-pointer";
+        break;
       case "DELETE":
-        return "diff-remove border-l-2 transition-diff cursor-pointer";
+        baseClasses = "diff-remove border-l-2 transition-diff cursor-pointer";
+        break;
       case "CONTEXT":
-        return "diff-context border-l-2 border-transparent transition-diff cursor-pointer";
+        baseClasses =
+          "diff-context border-l-2 border-transparent transition-diff cursor-pointer";
+        break;
       default:
-        return "diff-context border-l-2 border-transparent transition-diff cursor-pointer";
+        baseClasses =
+          "diff-context border-l-2 border-transparent transition-diff cursor-pointer";
+        break;
     }
+
+    // Add highlighting classes if line ID matches search query
+    if (isHighlighted) {
+      baseClasses +=
+        " bg-yellow-100 dark:bg-yellow-900/30 ring-2 ring-yellow-300 dark:ring-yellow-700/50";
+    }
+
+    return baseClasses;
   };
 
   const handleLineClick = () => {
@@ -1808,35 +1895,44 @@ function Line({ line, hunkId, lineIndex }) {
         >
           <${SearchHighlight}
             text=${line.content}
-            searchQuery=${appState?.debouncedSearchQuery.value || ""}
+            searchQuery=${appState?.searchQuery.value || ""}
           />
         </div>
 
-        <div class="w-20 px-2 py-1 flex items-center justify-center gap-1">
+        <div class="w-28 px-2 py-1 flex items-center justify-end gap-1">
           ${totalComments > 0 &&
           html`<div
-            class="w-4 h-4 rounded-full bg-blue-500 dark:bg-blue-600 flex items-center justify-center shadow-sm"
+            class="w-4 h-4 rounded-full bg-blue-500 dark:bg-blue-600 flex items-center justify-center shadow-sm flex-shrink-0"
           >
             <span class="text-xs text-white font-semibold">
               ${totalComments}
             </span>
           </div>`}
           <div
-            class="opacity-0 group-hover:opacity-100 transition-all duration-200"
+            class="opacity-0 group-hover:opacity-100 transition-all duration-200 flex gap-0.5"
           >
             <${CopyButton}
-              text=${line.id}
-              ariaLabel="Copy line ID"
-              title="Copy Line ID"
-              className="p-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
+              text=${line.content}
+              ariaLabel="Copy line content"
+              title="Copy Line Content"
+              className="p-0.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
             />
-          </div>
-          <div
-            class="opacity-0 group-hover:opacity-100 p-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 transition-all duration-200"
-          >
-            <${MessageSquare}
-              class="w-3 h-3 text-blue-500 dark:text-blue-400"
+            <${CopyLinkButton}
+              lineId=${line.id}
+              ariaLabel="Copy link to line"
+              title="Copy Link to Line"
+              className="p-0.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
             />
+            <button
+              onClick=${() => setShowCommentForm(true)}
+              class="p-0.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
+              aria-label="Add comment to line"
+              title="Add Comment to Line"
+            >
+              <${MessageSquare}
+                class="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors"
+              />
+            </button>
           </div>
         </div>
         <div
@@ -2300,9 +2396,9 @@ function FileHeader() {
         <!-- Right side controls -->
         <div class="flex items-center gap-1">
           <${CopyButton}
-            text=${diff.value.id}
-            ariaLabel="Copy diff ID"
-            title="Copy Diff ID"
+            text=${diff.value.raw}
+            ariaLabel="Copy diff content"
+            title="Copy Diff Content"
             className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-200 group hover:scale-105 shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-700 cursor-pointer"
           />
           <button
@@ -2363,14 +2459,14 @@ function FileHeader() {
           resultCount=${diff.value.hunks.filter((hunk, index) =>
             searchInHunk(
               hunk,
-              appState.debouncedSearchQuery.value,
+              appState.searchQuery.value,
               appState.comments.value,
               index,
             ),
           ).length}
           totalHunks=${diff.value.hunks.length}
           isSearching=${appState.searchQuery.value !==
-          appState.debouncedSearchQuery.value}
+          appState.searchQuery.value}
         />
         <${HunkFilter}
           currentFilter=${appState.currentFilter.value}
@@ -2390,6 +2486,7 @@ function FileHeader() {
 
 /**
  * Search helper function to check if hunk matches search query
+ * Searches in hunk ID, name, header, line content, line IDs, and comments
  * @param {Hunk} hunk - The hunk to search
  * @param {string} query - The search query
  * @param {Comment[]} comments - All comments for the diff
@@ -2410,9 +2507,13 @@ function searchInHunk(hunk, query, comments, hunkIndex) {
   const header = `@@ -${hunk.from_start},${hunk.from_count} +${hunk.to_start},${hunk.to_count} @@`;
   if (header.toLowerCase().includes(searchTerm)) return true;
 
-  // Search in line content
+  // Search in line content and line IDs
   if (
-    hunk.lines.some((line) => line.content.toLowerCase().includes(searchTerm))
+    hunk.lines.some(
+      (line) =>
+        line.content.toLowerCase().includes(searchTerm) ||
+        (line.id && line.id.toLowerCase().includes(searchTerm)),
+    )
   ) {
     return true;
   }
@@ -2466,14 +2567,6 @@ function App() {
   const appState = useContext(AppState);
   if (!appState) throw new Error("App must be used within AppState");
 
-  // Add debouncing for search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      appState.debouncedSearchQuery.value = appState.searchQuery.value;
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [appState.searchQuery.value]);
-
   // Sync search query with URL parameter
   useEffect(() => {
     updateURLParameter("search", appState.searchQuery.value);
@@ -2501,7 +2594,7 @@ function App() {
     // Apply search filter
     const passesSearch = searchInHunk(
       hunk,
-      appState.debouncedSearchQuery.value,
+      appState.searchQuery.value,
       appState.comments.value,
       index,
     );
