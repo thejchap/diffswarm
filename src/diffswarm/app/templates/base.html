@@ -122,7 +122,6 @@
         background-color: hsl(var(--background));
         color: hsl(var(--foreground));
         background: hsl(220 9% 96%);
-        min-height: 100vh;
       }
 
       @media (prefers-color-scheme: dark) {
@@ -215,7 +214,21 @@
     </style>
     {% block styles %}{% endblock %}
   </head>
-  <body>
+  <body class="min-h-screen">
     {% block content %}{% endblock %}
+    <footer>
+      <div class="max-w-6xl mx-auto px-6 py-6">
+        <div class="text-center">
+          <p class="text-sm text-gray-600 dark:text-monokai-muted">
+            © 2025
+            <a href="{{ url_for('home') }}" class="underline">diffswarm</a>.
+            built with ❤️ in philly by
+            <a class="underline" href="https://github.com/thejchap"
+              >@thejchap</a
+            >
+          </p>
+        </div>
+      </div>
+    </footer>
   </body>
 </html>

@@ -22,10 +22,14 @@ ROUTER = APIRouter()
 
 @ROUTER.get("/", response_class=HTMLResponse)
 def home(request: Request) -> HTMLResponse:
+    url = str(request.url_for("home")).rstrip("/")
+    snippet = f"""\
+diff <(echo "hello") <(echo "hello\\nworld") -u | curl --header 'Content-Type: text/plain' -X POST --data-binary @- {url}
+    """.strip()  # noqa: E501
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/index.html",
-        context={},
+        context={"snippet": snippet},
     )
 
 

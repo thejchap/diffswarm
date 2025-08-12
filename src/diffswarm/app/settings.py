@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     database_create_all: bool = False
     port: int = 8000
     host: str = "localhost"
+    forwarded_allow_ips: str | None = None
 
     @property
     def git_hash(self) -> str:
