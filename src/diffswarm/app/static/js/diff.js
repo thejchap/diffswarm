@@ -1027,6 +1027,7 @@ function useComments() {
     /** @type {CommentFormState} */ formState,
     /** @type {string} */ text,
   ) => {
+    const author = "anonymous";
     try {
       // Convert hunk-{index} to actual hunk ULID
       const hunkIndex = parseInt(formState.hunkId.replace("hunk-", ""));
@@ -1044,7 +1045,7 @@ function useComments() {
       const optimisticComment = {
         id: tempId,
         text: text.trim(),
-        author: "Current User",
+        author,
         timestamp: new Date(),
         hunkId: formState.hunkId,
         diffId: diff.value.id,
@@ -1063,7 +1064,7 @@ function useComments() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: text.trim(),
-          author: "Current User",
+          author,
           hunk_id: actualHunkId, // Use actual hunk ULID
           diff_id: diff.value.id,
           line_index: formState.lineIndex ?? -1, // Use -1 for hunk-level comments
@@ -1689,7 +1690,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between">
             <div class="flex-1">
-              <div class=${isCompleted ? "line-through opacity-60" : ""}>
+              <div class=${isCompleted ? "line-through" : ""}>
                 <${HunkRename} hunk=${hunk} onRename=${onRenameHunk} />
               </div>
               <div class="flex items-center gap-3 mt-1">
@@ -2066,7 +2067,7 @@ function Hunk({ hunk, hunkIndex }) {
   return html`
     <div
       class="dark:bg-monokai-bg transition-all duration-300 ${isCompleted
-        ? "opacity-75"
+        ? ""
         : ""}"
     >
       <!-- hunk header -->
