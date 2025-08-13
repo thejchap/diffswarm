@@ -53,7 +53,8 @@ class CreateCommentResponse(DiffSwarmBaseModel):
 
 
 class UpdateDiffRequest(DiffSwarmBaseModel):
-    name: str
+    name: str | None = None
+    description: str | None = None
 
 
 class UpdateDiffResponse(DiffSwarmBaseModel):
@@ -120,7 +121,11 @@ def update_diff(
             status_code=status.HTTP_404_NOT_FOUND, detail="Diff not found"
         )
 
-    db_diff.name = request.name
+    # Update fields if provided
+    if request.name is not None:
+        db_diff.name = request.name
+    if "description" in request.model_fields_set:
+        db_diff.description = request.description
     session.commit()
     session.refresh(db_diff)
 

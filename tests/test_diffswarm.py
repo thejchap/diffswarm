@@ -89,6 +89,7 @@ class TestAPI:
         assert diff["raw"] == DiffBase.HELLO_WORLD
         assert diff["from_filename"] == "/dev/fd/14"
         assert diff["to_filename"] == "/dev/fd/16"
+        assert diff["description"] is None  # Default should be None
         assert len(diff["hunks"]) == 1
 
         hunk = diff["hunks"][0]
@@ -306,6 +307,59 @@ class TestAPI:
         assert res.status_code == status.HTTP_404_NOT_FOUND
         body = res.json()
         assert body["detail"] == "Diff not found"
+
+    def test_update_diff_description(self, client: TestClient) -> None:
+        res = client.post(
+            "/",
+            content=DiffBase.HELLO_WORLD,
+            headers={"Content-Type": "text/plain"},
+        )
+        assert res.status_code == status.HTTP_201_CREATED
+        diff_id = res.headers["X-Diff-ID"]
+
+        # Test setting description
+        update_data = {"description": "This is a test description"}
+        res = client.put(f"/api/diffs/{diff_id}", json=update_data)
+        assert res.status_code == status.HTTP_200_OK
+        body = res.json()
+        diff = body["diff"]
+        assert diff["description"] == "This is a test description"
+        assert diff["id"] == diff_id
+
+        # Test updating description
+        update_data = {"description": "Updated description"}
+        res = client.put(f"/api/diffs/{diff_id}", json=update_data)
+        assert res.status_code == status.HTTP_200_OK
+        body = res.json()
+        diff = body["diff"]
+        assert diff["description"] == "Updated description"
+
+        # Test clearing description
+        update_data = {"description": None}
+        res = client.put(f"/api/diffs/{diff_id}", json=update_data)
+        assert res.status_code == status.HTTP_200_OK
+        body = res.json()
+        diff = body["diff"]
+        assert diff["description"] is None
+
+    def test_update_diff_name_and_description(self, client: TestClient) -> None:
+        res = client.post(
+            "/",
+            content=DiffBase.HELLO_WORLD,
+            headers={"Content-Type": "text/plain"},
+        )
+        assert res.status_code == status.HTTP_201_CREATED
+        diff_id = res.headers["X-Diff-ID"]
+
+        # Test updating both name and description
+        update_data = {"name": "Custom Diff", "description": "Custom description"}
+        res = client.put(f"/api/diffs/{diff_id}", json=update_data)
+        assert res.status_code == status.HTTP_200_OK
+        body = res.json()
+        diff = body["diff"]
+        assert diff["name"] == "Custom Diff"
+        assert diff["description"] == "Custom description"
+        assert diff["id"] == diff_id
 
     def test_update_hunk_name(self, client: TestClient) -> None:
         res = client.post(

@@ -59,6 +59,7 @@ function updateURLParameter(key, value) {
  *  from_timestamp: Date | null,
  *  to_filename: string,
  *  to_timestamp: Date | null,
+ *  description: string | null,
  *  hunks: Hunk[]
  * }} Diff
  */
@@ -2082,6 +2083,184 @@ function Hunk({ hunk, hunkIndex }) {
 }
 
 /**
+ * DiffDescription component for editing the diff description
+ */
+function DiffDescription() {
+  const diff = useDiff();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const textareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
+
+  const handleEdit = () => {
+    setEditValue(diff.value.description || "");
+    setIsEditing(true);
+  };
+
+  // Auto-focus when entering edit mode
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleSave = async () => {
+    // Get the current value directly from the textarea to avoid timing issues
+    const currentTextareaValue = textareaRef.current?.value || "";
+    const finalValue = currentTextareaValue.trim();
+    const currentDescription = diff.value.description || "";
+
+    // Always close the editor first
+    setIsEditing(false);
+
+    // Don't make API call if values are the same
+    if (finalValue === currentDescription) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Store original diff state for rollback
+      const originalDiff = { ...diff.value };
+
+      // Optimistically update the diff description
+      diff.value = { ...diff.value, description: finalValue || null };
+
+      const response = await fetch(`/api/diffs/${diff.value.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: finalValue || null }),
+      });
+
+      if (response.ok) {
+        const updatedDiff = await response.json();
+        diff.value = updatedDiff.diff;
+      } else {
+        // Rollback on failure
+        diff.value = originalDiff;
+        setIsEditing(true); // Re-enter editing mode on failure
+        console.error(
+          "Failed to update diff description:",
+          await response.text(),
+        );
+      }
+    } catch (error) {
+      console.error("Failed to update diff description:", error);
+      // Note: rollback should have been handled above
+    }
+    setIsLoading(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(diff.value.description || "");
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (/** @type {KeyboardEvent} */ e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancel();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleSave();
+    }
+  };
+
+  const handleChange = (/** @type {Event} */ e) => {
+    const target = /** @type {HTMLTextAreaElement} */ (e.target);
+    setEditValue(target.value);
+  };
+
+  const handleSubmit = (/** @type {Event} */ e) => {
+    e.preventDefault();
+    handleSave();
+  };
+
+  if (isEditing) {
+    return html`
+      <div
+        class="my-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow-sm"
+      >
+        <form onSubmit=${handleSubmit} class="p-3">
+          <div class="mb-2">
+            <label
+              class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+            >
+              Description
+            </label>
+            <textarea
+              ref=${textareaRef}
+              value=${editValue}
+              onChange=${handleChange}
+              onKeyDown=${handleKeyDown}
+              placeholder="Add a description for this diff..."
+              rows="3"
+              class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-sm"
+              disabled=${isLoading}
+            />
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              Press ${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter
+              to save, Esc to cancel
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                onClick=${handleCancel}
+                disabled=${isLoading}
+                class="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled=${isLoading}
+                class="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                ${isLoading ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `;
+  }
+
+  // Show description if it exists, otherwise show "Add description" button
+  if (diff.value.description) {
+    return html`
+      <div class="my-4 group">
+        <div class="flex items-start gap-2">
+          <div
+            onClick=${handleEdit}
+            class="flex-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors leading-relaxed whitespace-pre-wrap"
+            title="Click to edit description"
+          >
+            ${diff.value.description}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Show "Add description" button when no description exists
+  return html`
+    <div class="my-4">
+      <button
+        onClick=${handleEdit}
+        class="text-xs text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors cursor-pointer flex items-center gap-1"
+        title="Add description"
+      >
+        <${Plus} class="w-3 h-3" />
+        Add description
+      </button>
+    </div>
+  `;
+}
+
+/**
  * FileRename component
  */
 function FileRename() {
@@ -2480,6 +2659,9 @@ function FileHeader() {
           </button>
         </div>
       </div>
+
+      <!-- Description section - full width -->
+      <${DiffDescription} />
 
       <!-- search wrapper -->
       <div class="flex items-center gap-4">

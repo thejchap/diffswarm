@@ -501,6 +501,7 @@ class Diff(DiffSwarmBaseModel):
     from_timestamp: datetime | None = None
     to_filename: str
     to_timestamp: datetime | None = None
+    description: str | None = None
     hunks: list[Hunk]
 
     @classmethod
@@ -522,6 +523,7 @@ class Diff(DiffSwarmBaseModel):
             from_timestamp=from_timestamp,
             to_filename=db_diff.to_filename,
             to_timestamp=to_timestamp,
+            description=db_diff.description,
             hunks=[Hunk.from_db(db_hunk) for db_hunk in db_diff.hunks],
         )
 

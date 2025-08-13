@@ -134,6 +134,10 @@ class DBDiff(Base):
         Text(),
         nullable=True,
     )
+    description: Mapped[str | None] = mapped_column(
+        Text(),
+        nullable=True,
+    )
     # Relationship to hunks and comments
     hunks: Mapped[list["DBHunk"]] = relationship(
         "DBHunk", back_populates="diff", cascade="all, delete-orphan"
