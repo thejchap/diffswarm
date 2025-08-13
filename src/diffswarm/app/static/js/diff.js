@@ -614,7 +614,22 @@ function CopyButton({
   const handleCopy = async (/** @type {Event} */ e) => {
     e.stopPropagation(); // Prevent event bubbling
     try {
-      await navigator.clipboard.writeText(text);
+      // Try modern clipboard API first (HTTPS required)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for non-HTTPS browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        textArea.remove();
+      }
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
@@ -657,7 +672,22 @@ function CopyLinkButton({
     e.stopPropagation(); // Prevent event bubbling
     try {
       const link = `${window.location.origin}${window.location.pathname}?search=${encodeURIComponent(lineId || "")}`;
-      await navigator.clipboard.writeText(link);
+      // Try modern clipboard API first (HTTPS required)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        // Fallback for non-HTTPS browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = link;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        textArea.remove();
+      }
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
@@ -1719,7 +1749,22 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
                 onClick=${async () => {
                   try {
                     const link = `${window.location.origin}${window.location.pathname}?search=${encodeURIComponent(hunk.id || "")}`;
-                    await navigator.clipboard.writeText(link);
+                    // Try modern clipboard API first (HTTPS required)
+                    if (navigator.clipboard && window.isSecureContext) {
+                      await navigator.clipboard.writeText(link);
+                    } else {
+                      // Fallback for non-HTTPS browsers
+                      const textArea = document.createElement("textarea");
+                      textArea.value = link;
+                      textArea.style.position = "fixed";
+                      textArea.style.left = "-999999px";
+                      textArea.style.top = "-999999px";
+                      document.body.appendChild(textArea);
+                      textArea.focus();
+                      textArea.select();
+                      document.execCommand("copy");
+                      textArea.remove();
+                    }
                     setIsLinkCopied(true);
                     setTimeout(() => setIsLinkCopied(false), 2000);
                   } catch (err) {
@@ -2584,7 +2629,22 @@ function FileHeader() {
             onClick=${async () => {
               try {
                 const link = `${window.location.origin}${window.location.pathname}`;
-                await navigator.clipboard.writeText(link);
+                // Try modern clipboard API first (HTTPS required)
+                if (navigator.clipboard && window.isSecureContext) {
+                  await navigator.clipboard.writeText(link);
+                } else {
+                  // Fallback for non-HTTPS browsers
+                  const textArea = document.createElement("textarea");
+                  textArea.value = link;
+                  textArea.style.position = "fixed";
+                  textArea.style.left = "-999999px";
+                  textArea.style.top = "-999999px";
+                  document.body.appendChild(textArea);
+                  textArea.focus();
+                  textArea.select();
+                  document.execCommand("copy");
+                  textArea.remove();
+                }
                 setIsFileLinkCopied(true);
                 setTimeout(() => setIsFileLinkCopied(false), 2000);
               } catch (err) {
