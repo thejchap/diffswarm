@@ -2054,6 +2054,11 @@ function LazyHunk({ hunk, hunkIndex }) {
   const ref = useRef(/** @type {HTMLDivElement | null} */ (null));
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
 
+  // Get collapsed state from AppState
+  const appState = useContext(AppState);
+  if (!appState) throw new Error("LazyHunk must be used within AppState");
+  const isCollapsed = appState.collapsedHunks.value.has(hunkIndex);
+
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -2075,6 +2080,11 @@ function LazyHunk({ hunk, hunkIndex }) {
     return () => observer.disconnect();
   }, []);
 
+  // Reset measured height when collapsed state changes
+  useEffect(() => {
+    setMeasuredHeight(null);
+  }, [isCollapsed]);
+
   // Measure height when content is first rendered
   useEffect(() => {
     if (isVisible && contentRef.current && measuredHeight === null) {
@@ -2091,9 +2101,12 @@ function LazyHunk({ hunk, hunkIndex }) {
     }
   }, [isVisible, measuredHeight]);
 
-  // Estimate height based on line count if not measured yet
+  // Estimate height based on line count and collapsed state if not measured yet
   const estimatedHeight =
-    measuredHeight || Math.max(120, hunk.lines.length * 24 + 80);
+    measuredHeight ||
+    (isCollapsed
+      ? 60 // Collapsed hunks are just the header (~60px)
+      : Math.max(120, hunk.lines.length * 24 + 80)); // Expanded hunks
 
   if (!hasBeenVisible) {
     return html`<div
