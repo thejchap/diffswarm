@@ -2048,7 +2048,11 @@ function Line({ line, hunkId, lineIndex }) {
 function LazyHunk({ hunk, hunkIndex }) {
   const [isVisible, setIsVisible] = useState(false);
   const [hasBeenVisible, setHasBeenVisible] = useState(false);
+  const [measuredHeight, setMeasuredHeight] = useState(
+    /** @type {number | null} */ (null),
+  );
   const ref = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -2071,10 +2075,31 @@ function LazyHunk({ hunk, hunkIndex }) {
     return () => observer.disconnect();
   }, []);
 
+  // Measure height when content is first rendered
+  useEffect(() => {
+    if (isVisible && contentRef.current && measuredHeight === null) {
+      const resizeObserver = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry) {
+          setMeasuredHeight(entry.contentRect.height);
+        }
+      });
+
+      resizeObserver.observe(contentRef.current);
+
+      return () => resizeObserver.disconnect();
+    }
+  }, [isVisible, measuredHeight]);
+
+  // Estimate height based on line count if not measured yet
+  const estimatedHeight =
+    measuredHeight || Math.max(120, hunk.lines.length * 24 + 80);
+
   if (!hasBeenVisible) {
     return html`<div
       ref=${ref}
-      class="h-32 flex items-center justify-center bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200/50 dark:border-gray-700/50"
+      style="height: ${estimatedHeight}px"
+      class="flex items-center justify-center bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200/50 dark:border-gray-700/50"
     >
       <div class="text-sm text-gray-500 dark:text-gray-400">
         Loading hunk ${hunkIndex + 1}...
@@ -2084,9 +2109,12 @@ function LazyHunk({ hunk, hunkIndex }) {
 
   return html`<div ref=${ref}>
     ${isVisible
-      ? html`<${Hunk} hunk=${hunk} hunkIndex=${hunkIndex} />`
+      ? html`<div ref=${contentRef}>
+          <${Hunk} hunk=${hunk} hunkIndex=${hunkIndex} />
+        </div>`
       : html`<div
-          class="h-32 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200/50 dark:border-gray-700/50 flex items-center justify-center"
+          style="height: ${estimatedHeight}px"
+          class="bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200/50 dark:border-gray-700/50 flex items-center justify-center"
         >
           <div class="text-sm text-gray-500 dark:text-gray-400">
             Hunk ${hunkIndex + 1} (${hunk.lines.length} lines)
