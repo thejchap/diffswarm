@@ -2042,6 +2042,60 @@ function Line({ line, hunkId, lineIndex }) {
 }
 
 /**
+ * LazyHunk component with Intersection Observer for efficient rendering
+ * @param {{ hunk: Hunk, hunkIndex: number }} props
+ */
+function LazyHunk({ hunk, hunkIndex }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [hasBeenVisible, setHasBeenVisible] = useState(false);
+  const ref = useRef(/** @type {HTMLDivElement | null} */ (null));
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          setIsVisible(true);
+          setHasBeenVisible(true);
+        } else {
+          setIsVisible(false);
+        }
+      },
+      { rootMargin: "200px" }, // Load 200px before entering viewport
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  if (!hasBeenVisible) {
+    return html`<div
+      ref=${ref}
+      class="h-32 flex items-center justify-center bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200/50 dark:border-gray-700/50"
+    >
+      <div class="text-sm text-gray-500 dark:text-gray-400">
+        Loading hunk ${hunkIndex + 1}...
+      </div>
+    </div>`;
+  }
+
+  return html`<div ref=${ref}>
+    ${isVisible
+      ? html`<${Hunk} hunk=${hunk} hunkIndex=${hunkIndex} />`
+      : html`<div
+          class="h-32 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200/50 dark:border-gray-700/50 flex items-center justify-center"
+        >
+          <div class="text-sm text-gray-500 dark:text-gray-400">
+            Hunk ${hunkIndex + 1} (${hunk.lines.length} lines)
+          </div>
+        </div>`}
+  </div>`;
+}
+
+/**
  * @param {any} props
  */
 function Hunk({ hunk, hunkIndex }) {
@@ -2919,7 +2973,7 @@ function App() {
                       (h) => h.id === hunk.id,
                     );
                     return html`
-                      <${Hunk} hunk=${hunk} hunkIndex=${originalIndex} />
+                      <${LazyHunk} hunk=${hunk} hunkIndex=${originalIndex} />
                     `;
                   },
                 )}
