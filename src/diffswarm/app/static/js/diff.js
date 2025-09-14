@@ -4,6 +4,8 @@ import { html } from "htm/preact";
 import { createContext, render } from "preact";
 import { signal } from "@preact/signals";
 import { useContext, useState, useEffect, useRef } from "preact/hooks";
+// @ts-ignore - marked is imported via importmap
+import { marked } from "marked";
 
 const $APP = document.getElementById("app");
 if (!$APP) {
@@ -184,6 +186,18 @@ function hunkToText(hunk) {
     })
     .join("\n");
   return header + "\n" + lines;
+}
+
+/**
+ * Renders markdown text to HTML using marked
+ * @param {string} text - The markdown text to render
+ * @returns {string} - The rendered HTML
+ */
+function renderMarkdown(text) {
+  return marked(text, {
+    breaks: true,
+    gfm: true,
+  });
 }
 
 // Icon components using Lucide icons
@@ -1108,6 +1122,61 @@ function useComments() {
     }
   };
 
+  const editComment = async (
+    /** @type {string} */ commentId,
+    /** @type {string} */ newText,
+  ) => {
+    try {
+      // Store original comments for rollback
+      const originalComments = [...comments.value];
+
+      // Optimistically update comment in local state
+      comments.value = comments.value.map((comment) =>
+        comment.id === commentId ? { ...comment, text: newText } : comment,
+      );
+
+      const response = await fetch(`/api/comments/${commentId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: newText }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Find the hunk index by ULID to create frontend hunk-{index} format
+        const hunkIndex = diff.value.hunks.findIndex(
+          (h) => h.id === result.comment.hunk_id,
+        );
+        // Replace optimistic update with server response
+        const updatedComment = {
+          ...result.comment,
+          hunkId: hunkIndex >= 0 ? `hunk-${hunkIndex}` : result.comment.hunk_id, // Convert to hunk-{index} for frontend
+          timestamp: new Date(result.comment.timestamp),
+          lineIndex:
+            result.comment.line_index === -1
+              ? undefined
+              : result.comment.line_index,
+          startOffset: result.comment.start_offset,
+          endOffset: result.comment.end_offset,
+          parentId: result.comment.in_reply_to,
+          diffId: result.comment.diff_id,
+        };
+
+        comments.value = comments.value.map((comment) =>
+          comment.id === commentId ? updatedComment : comment,
+        );
+      } else {
+        // Rollback on failure
+        comments.value = originalComments;
+        console.error("Failed to edit comment:", await response.text());
+        throw new Error("Failed to edit comment");
+      }
+    } catch (error) {
+      console.error("Error editing comment:", error);
+      throw error;
+    }
+  };
+
   const deleteComment = async (/** @type {string} */ commentId) => {
     try {
       // Helper function to find all comments to delete (including nested replies)
@@ -1218,6 +1287,7 @@ function useComments() {
   return {
     comments: comments.value,
     addComment,
+    editComment,
     deleteComment,
     getCommentsForHunk,
     getCommentsForLine,
@@ -1329,7 +1399,7 @@ function CommentForm({
 /**
  * @param {any} props
  */
-function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
+function CommentMenu({ onReply, onEdit, onDelete, isOpen, onToggle }) {
   return html`
     <div class="relative">
       <button
@@ -1357,6 +1427,16 @@ function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
           </button>
           <button
             onClick=${() => {
+              onEdit();
+              onToggle();
+            }}
+            class="w-full px-3 py-1.5 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 cursor-pointer"
+          >
+            <${Edit3} class="w-3.5 h-3.5" />
+            Edit
+          </button>
+          <button
+            onClick=${() => {
               onDelete();
               onToggle();
             }}
@@ -1376,11 +1456,13 @@ function CommentMenu({ onReply, onDelete, isOpen, onToggle }) {
  */
 function CommentItem({ comment, depth = 0, onReply, onDelete }) {
   const appState = useContext(AppState);
-  const { getRepliesForComment, addComment } = useComments();
+  const { getRepliesForComment, addComment, editComment } = useComments();
   const replies = getRepliesForComment(comment.id);
   const maxDepth = 3;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showReplyForm, setShowReplyForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(comment.text);
 
   const formatTimestamp = (/** @type {Date | string} */ timestamp) => {
     // Ensure timestamp is a Date object
@@ -1403,6 +1485,32 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
     setShowReplyForm(true);
   };
 
+  const handleEdit = () => {
+    setEditText(comment.text);
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (editText.trim() === comment.text) {
+      setIsEditing(false);
+      return;
+    }
+
+    try {
+      await editComment(comment.id, editText.trim());
+      setIsEditing(false);
+    } catch (error) {
+      console.error("Failed to edit comment:", error);
+      // Reset to original text on error
+      setEditText(comment.text);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditText(comment.text);
+    setIsEditing(false);
+  };
+
   const handleDelete = () => {
     onDelete(comment.id);
   };
@@ -1423,7 +1531,7 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
   return html`
     <div
       class="${isRootComment
-        ? "border-b border-gray-100 dark:border-gray-800 pb-4 mb-4"
+        ? "border-b border-gray-100 dark:border-gray-800"
         : ""} ${matchesSearch
         ? "ring-2 ring-yellow-400 dark:ring-yellow-500 rounded-lg p-2 bg-yellow-50 dark:bg-yellow-900/10"
         : ""}"
@@ -1457,6 +1565,7 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
             <div class="ml-auto">
               <${CommentMenu}
                 onReply=${handleReply}
+                onEdit=${handleEdit}
                 onDelete=${handleDelete}
                 isOpen=${isMenuOpen}
                 onToggle=${() => setIsMenuOpen(!isMenuOpen)}
@@ -1476,15 +1585,74 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
             </div>
           `}
 
-          <!-- Comment text -->
-          <div
-            class="text-gray-700 dark:text-gray-300 text-sm leading-relaxed mb-2"
-          >
-            <${SearchHighlight}
-              text=${comment.text}
-              searchQuery=${appState?.searchQuery.value || ""}
-            />
-          </div>
+          <!-- Comment text or edit form -->
+          ${isEditing
+            ? html`
+                <div class="mb-2">
+                  <textarea
+                    value=${editText}
+                    onInput=${(/** @type {Event} */ e) =>
+                      setEditText(
+                        /** @type {HTMLTextAreaElement} */ (e.target).value,
+                      )}
+                    onKeyDown=${(/** @type {KeyboardEvent} */ e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                        e.preventDefault();
+                        handleSaveEdit();
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        handleCancelEdit();
+                      }
+                    }}
+                    class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-sm"
+                    rows="3"
+                    placeholder="Edit your comment..."
+                    autofocus
+                  />
+                  <div class="flex items-center justify-between mt-2">
+                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                      Press
+                      ${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter
+                      to save, Esc to cancel
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button
+                        onClick=${handleCancelEdit}
+                        class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick=${handleSaveEdit}
+                        disabled=${!editText.trim() ||
+                        editText.trim() === comment.text}
+                        class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `
+            : html`
+                <div
+                  class="text-gray-700 dark:text-gray-300 text-sm leading-relaxed mb-2 prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML=${appState?.searchQuery.value?.trim()
+                    ? {
+                        __html: renderMarkdown(comment.text).replace(
+                          new RegExp(
+                            `(${appState.searchQuery.value.replace(
+                              /[.*+?^${}()|[\]\\]/g,
+                              "\\$&",
+                            )})`,
+                            "gi",
+                          ),
+                          '<mark class="bg-yellow-200 dark:bg-yellow-900/50 text-yellow-900 dark:text-yellow-200 px-0.5 rounded-sm font-medium">$1</mark>',
+                        ),
+                      }
+                    : { __html: renderMarkdown(comment.text) }}
+                />
+              `}
         </div>
       </div>
 

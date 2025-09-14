@@ -238,6 +238,59 @@ class TestAPI:
         body = res.json()
         assert body["detail"] == "Comment not found"
 
+    def test_update_comment(self, client: TestClient) -> None:
+        res = client.post(
+            "/",
+            content=DiffBase.HELLO_WORLD,
+            headers={"Content-Type": "text/plain"},
+        )
+        assert res.status_code == status.HTTP_201_CREATED
+        diff_id = res.headers["X-Diff-ID"]
+        res = client.get(f"/api/diffs/{diff_id}")
+        diff = res.json()["diff"]
+        hunk_id = diff["hunks"][0]["id"]
+
+        # Create a comment
+        comment_data = {
+            "text": "Original comment text",
+            "author": "test_user",
+            "hunk_id": str(hunk_id),
+            "diff_id": diff_id,
+            "line_index": 0,
+            "start_offset": 0,
+            "end_offset": 5,
+        }
+        res = client.post("/api/comments", json=comment_data)
+        assert res.status_code == status.HTTP_200_OK
+        comment_id = res.json()["comment"]["id"]
+        original_timestamp = res.json()["comment"]["timestamp"]
+
+        # Update the comment
+        update_data = {"text": "Updated comment text"}
+        res = client.put(f"/api/comments/{comment_id}", json=update_data)
+        assert res.status_code == status.HTTP_200_OK
+
+        body = res.json()
+        comment = body["comment"]
+        assert comment["text"] == "Updated comment text"
+        assert comment["author"] == "test_user"
+        assert comment["id"] == comment_id
+        assert comment["timestamp"] == original_timestamp  # Timestamp should not change
+        assert comment["diff_id"] == diff_id
+        assert comment["line_index"] == 0
+        assert comment["start_offset"] == 0
+        expected_end_offset = 5
+        assert comment["end_offset"] == expected_end_offset
+
+    def test_update_comment_not_found(self, client: TestClient) -> None:
+        update_data = {"text": "Updated text"}
+        res = client.put(
+            f"/api/comments/{generate_prefixed_ulid('c')}", json=update_data
+        )
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+        body = res.json()
+        assert body["detail"] == "Comment not found"
+
     def test_create_reply_comment(self, client: TestClient) -> None:
         res = client.post(
             "/",

@@ -70,6 +70,14 @@ class UpdateHunkResponse(DiffSwarmBaseModel):
     hunk: Hunk
 
 
+class UpdateCommentRequest(DiffSwarmBaseModel):
+    text: str
+
+
+class UpdateCommentResponse(DiffSwarmBaseModel):
+    comment: Comment
+
+
 @ROUTER.get("/diffs/{diff_id}")
 def get_diff(diff_id: PrefixedULID, session: SessionDependency) -> GetDiffResponse:
     db_diff = (
@@ -92,6 +100,28 @@ def create_comment(
     session.refresh(db_comment)
     comment = Comment.from_db(db_comment)
     return CreateCommentResponse(comment=comment)
+
+
+@ROUTER.put("/comments/{comment_id}")
+def update_comment(
+    comment_id: PrefixedULID, request: UpdateCommentRequest, session: SessionDependency
+) -> UpdateCommentResponse:
+    db_comment = (
+        session.query(DBComment)
+        .filter(DBComment.id == comment_id)
+        .with_for_update()
+        .first()
+    )
+    if not db_comment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found"
+        )
+
+    db_comment.text = request.text
+    session.commit()
+    session.refresh(db_comment)
+    comment = Comment.from_db(db_comment)
+    return UpdateCommentResponse(comment=comment)
 
 
 @ROUTER.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
