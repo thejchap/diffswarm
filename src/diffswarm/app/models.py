@@ -21,8 +21,6 @@ from pydantic import (
 )
 from ulid import ULID
 
-from .database import DBComment, DBDiff, DBHunk, DBLine
-
 
 def validate_prefixed_ulid(raw: str) -> str:
     prefix, ulid = raw.split("-")
@@ -85,17 +83,6 @@ class Line(BaseModel):
     line_number_old: int | None = None
     line_number_new: int | None = None
 
-    @classmethod
-    def from_db(cls, db_line: DBLine) -> Self:
-        """Create a Line from a database model."""
-        return cls(
-            id=db_line.id,
-            type=LineType(db_line.type),
-            content=db_line.content,
-            line_number_old=db_line.line_number_old,
-            line_number_new=db_line.line_number_new,
-        )
-
 
 class HunkBase(DiffSwarmBaseModel):
     """Base Hunk model without ID column for parsing."""
@@ -157,20 +144,6 @@ class Hunk(DiffSwarmBaseModel):
             msg = f"Expected {to_count} to-lines, got {add_count + context_count}"
             raise ValueError(msg)
         return v
-
-    @classmethod
-    def from_db(cls, db_hunk: DBHunk) -> Self:
-        """Create a Hunk from a database model."""
-        return cls(
-            id=db_hunk.id,
-            name=db_hunk.name or db_hunk.id,  # Use name if available, fallback to id
-            from_start=db_hunk.from_start,
-            from_count=db_hunk.from_count,
-            to_start=db_hunk.to_start,
-            to_count=db_hunk.to_count,
-            completed_at=db_hunk.completed_at,
-            lines=[Line.from_db(db_line) for db_line in db_hunk.lines],
-        )
 
 
 class DiffBase(DiffSwarmBaseModel):
@@ -504,29 +477,6 @@ class Diff(DiffSwarmBaseModel):
     description: str | None = None
     hunks: list[Hunk]
 
-    @classmethod
-    def from_db(cls, db_diff: DBDiff) -> Self:
-        """Create a Diff from a database model."""
-        from_timestamp = None
-        if db_diff.from_timestamp:
-            from_timestamp = dateutil_parser.parse(db_diff.from_timestamp)
-
-        to_timestamp = None
-        if db_diff.to_timestamp:
-            to_timestamp = dateutil_parser.parse(db_diff.to_timestamp)
-
-        return cls(
-            id=db_diff.id,
-            name=db_diff.name or str(db_diff.id),  # Default to id if name is None
-            raw=db_diff.raw,
-            from_filename=db_diff.from_filename,
-            from_timestamp=from_timestamp,
-            to_filename=db_diff.to_filename,
-            to_timestamp=to_timestamp,
-            description=db_diff.description,
-            hunks=[Hunk.from_db(db_hunk) for db_hunk in db_diff.hunks],
-        )
-
 
 class Comment(DiffSwarmBaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -540,19 +490,3 @@ class Comment(DiffSwarmBaseModel):
     start_offset: int
     end_offset: int
     in_reply_to: PrefixedULID | None = None
-
-    @classmethod
-    def from_db(cls, db_comment: DBComment) -> Self:
-        """Create a Comment from a database model."""
-        return cls(
-            id=db_comment.id,
-            text=db_comment.text,
-            author=db_comment.author,
-            timestamp=db_comment.timestamp,
-            hunk_id=db_comment.hunk_id,
-            diff_id=db_comment.diff_id,
-            line_index=db_comment.line_index,
-            start_offset=db_comment.start_offset,
-            end_offset=db_comment.end_offset,
-            in_reply_to=db_comment.in_reply_to if db_comment.in_reply_to else None,
-        )
