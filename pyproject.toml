@@ -12,7 +12,7 @@ dependencies = [
   "pydantic-settings>=2.10.1",
   "python-dateutil>=2.9.0.post0",
   "python-ulid[pydantic]==3.0",
-  "sapling @ file:///Users/justinchapman/src/sapling",
+  "sapling @ git+https://github.com/thejchap/sapling.git",
 ]
 
 [project.scripts]
