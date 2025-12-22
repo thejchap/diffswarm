@@ -3,18 +3,19 @@ from typing import Annotated
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BeforeValidator
-from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT
 
-from diffswarm.app.database import DBComment, DBDiff, DBHunk, DBLine
-from diffswarm.app.dependencies import SessionDependency, SettingsDependency
+from diffswarm.app.dependencies import SettingsDependency, TransactionDependency
 from diffswarm.app.models import (
     Comment,
     Diff,
     DiffBase,
+    Hunk,
+    Line,
     PrefixedULID,
     generate_prefixed_ulid,
 )
+from diffswarm.app.routers.api import load_diff_with_relations
 from diffswarm.app.templates import TEMPLATES
 
 ROUTER = APIRouter()
@@ -37,23 +38,13 @@ diff <(echo "foo") <(echo "foo\\nbar") -u | curl -X POST --data-binary @- {url}
 def get_diff(
     request: Request,
     diff_id: PrefixedULID,
-    session: SessionDependency,
+    txn: TransactionDependency,
     settings: SettingsDependency,
 ) -> HTMLResponse:
-    db_diff = (
-        session.query(DBDiff)
-        .options(selectinload(DBDiff.hunks).selectinload(DBHunk.lines))
-        .filter(DBDiff.id == diff_id)
-        .one()
-    )
-    diff = Diff.from_db(db_diff)
-    db_comments = (
-        session.query(DBComment)
-        .filter(DBComment.diff_id == diff_id)
-        .order_by(DBComment.timestamp)
-        .all()
-    )
-    comments = [Comment.from_db(db_comment) for db_comment in db_comments]
+    diff = load_diff_with_relations(txn, diff_id)
+    all_comments = txn.all(Comment)
+    comments = [c.model for c in all_comments if c.model.diff_id == diff_id]
+    comments.sort(key=lambda c: c.timestamp)
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/diff.html",
@@ -70,50 +61,71 @@ def create_diff(
         BeforeValidator(DiffBase.parse_bytes, json_schema_input_type=str),
         Body(examples=[DiffBase.HELLO_WORLD], media_type="text/plain"),
     ],
-    session: SessionDependency,
+    txn: TransactionDependency,
 ) -> str:
     diff_id = generate_prefixed_ulid("d")
-    db_diff = DBDiff(
-        id=diff_id,
-        name=diff_id,
-        raw=body.raw,
-        from_filename=body.from_filename,
-        from_timestamp=body.from_timestamp.isoformat() if body.from_timestamp else None,
-        to_filename=body.to_filename,
-        to_timestamp=body.to_timestamp.isoformat() if body.to_timestamp else None,
-    )
-    session.add(db_diff)
+    hunks: list[Hunk] = []
     for hunk_data in body.hunks:
         hunk_id = generate_prefixed_ulid("h")
-        db_hunk = DBHunk(
-            id=hunk_id,
-            name=hunk_id,
-            diff_id=diff_id,
-            from_start=hunk_data.from_start,
-            from_count=hunk_data.from_count,
-            to_start=hunk_data.to_start,
-            to_count=hunk_data.to_count,
-        )
-        session.add(db_hunk)
+        lines: list[Line] = []
         for line_data in hunk_data.lines:
-            db_line = DBLine(
-                id=generate_prefixed_ulid("l"),
+            line_id = generate_prefixed_ulid("l")
+            line = Line.model_construct(
+                id_=line_id,
                 hunk_id=hunk_id,
-                type=line_data.type.value,
+                type=line_data.type,
                 content=line_data.content,
                 line_number_old=line_data.line_number_old,
                 line_number_new=line_data.line_number_new,
             )
-            session.add(db_line)
-    session.commit()
+            lines.append(line)
+            txn.put(Line, line_id, line)
+        hunk = Hunk.model_construct(
+            id_=hunk_id,
+            diff_id=diff_id,
+            name=hunk_id,
+            from_start=hunk_data.from_start,
+            from_count=hunk_data.from_count,
+            to_start=hunk_data.to_start,
+            to_count=hunk_data.to_count,
+            completed_at=None,
+            lines=lines,
+        )
+        hunks.append(hunk)
+        txn.put(Hunk, hunk_id, hunk)
+    diff = Diff.model_construct(
+        id_=diff_id,
+        name=diff_id,
+        raw=body.raw,
+        from_filename=body.from_filename,
+        from_timestamp=body.from_timestamp,
+        to_filename=body.to_filename,
+        to_timestamp=body.to_timestamp,
+        description=None,
+        hunks=hunks,
+    )
+    txn.put(Diff, diff_id, diff)
     res.headers["X-Diff-ID"] = diff_id
     return f"{req.url_for('get_diff', diff_id=diff_id)}\n"
 
 
 @ROUTER.delete("/{diff_id}", status_code=HTTP_204_NO_CONTENT)
-def delete_diff(diff_id: PrefixedULID, session: SessionDependency) -> None:
-    db_diff = session.query(DBDiff).filter(DBDiff.id == diff_id).first()
-    if not db_diff:
+def delete_diff(diff_id: PrefixedULID, txn: TransactionDependency) -> None:
+    diff_doc = txn.get(Diff, diff_id)
+    if not diff_doc:
         raise HTTPException(status_code=404, detail="Diff not found")
-    session.delete(db_diff)
-    session.commit()
+    all_hunks = txn.all(Hunk)
+    hunk_ids = [h.model_id for h in all_hunks if h.model.diff_id == diff_id]
+    all_lines = txn.all(Line)
+    for hunk_id in hunk_ids:
+        line_ids = [
+            line.model_id for line in all_lines if line.model.hunk_id == hunk_id
+        ]
+        for line_id in line_ids:
+            txn.delete(Line, line_id)
+        txn.delete(Hunk, hunk_id)
+    all_comments = txn.all(Comment)
+    comment_ids = [c.model_id for c in all_comments if c.model.diff_id == diff_id]
+    for comment_id in comment_ids:
+        txn.delete(Comment, comment_id)
+    txn.delete(Diff, diff_id)

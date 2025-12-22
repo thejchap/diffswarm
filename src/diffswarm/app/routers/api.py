@@ -1,17 +1,15 @@
-# d-01arz3ndektsv4rrffq69g5fav
-
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy.orm import selectinload
+from sapling.errors import NotFoundError
 
-from diffswarm.app.database import DBComment, DBDiff, DBHunk
-from diffswarm.app.dependencies import SessionDependency
+from diffswarm.app.dependencies import TransactionDependency
 from diffswarm.app.models import (
     Comment,
     Diff,
     DiffSwarmBaseModel,
     Hunk,
+    Line,
     PrefixedULID,
     generate_prefixed_ulid,
 )
@@ -32,20 +30,6 @@ class CreateCommentRequest(DiffSwarmBaseModel):
     start_offset: int
     end_offset: int
     in_reply_to: PrefixedULID | None = None
-
-    def to_db(self) -> DBComment:
-        return DBComment(
-            id=generate_prefixed_ulid("c"),
-            text=self.text,
-            author=self.author,
-            timestamp=datetime.now(UTC),
-            hunk_id=self.hunk_id,
-            diff_id=self.diff_id,
-            line_index=self.line_index,
-            start_offset=self.start_offset,
-            end_offset=self.end_offset,
-            in_reply_to=self.in_reply_to if self.in_reply_to else None,
-        )
 
 
 class CreateCommentResponse(DiffSwarmBaseModel):
@@ -78,126 +62,140 @@ class UpdateCommentResponse(DiffSwarmBaseModel):
     comment: Comment
 
 
+def load_diff_with_relations(txn: TransactionDependency, diff_id: str) -> Diff:
+    diff_doc = txn.fetch(Diff, diff_id)
+    diff = diff_doc.model
+    all_hunks = txn.all(Hunk)
+    hunks_for_diff = [h.model for h in all_hunks if h.model.diff_id == diff_id]
+    all_lines = txn.all(Line)
+    for hunk in hunks_for_diff:
+        hunk.lines = [
+            line.model for line in all_lines if line.model.hunk_id == hunk.id_
+        ]
+    diff.hunks = hunks_for_diff
+    return diff
+
+
 @ROUTER.get("/diffs/{diff_id}")
-def get_diff(diff_id: PrefixedULID, session: SessionDependency) -> GetDiffResponse:
-    db_diff = (
-        session.query(DBDiff)
-        .options(selectinload(DBDiff.hunks).selectinload(DBHunk.lines))
-        .filter(DBDiff.id == diff_id)
-        .one()
-    )
-    diff = Diff.from_db(db_diff)
+def get_diff(diff_id: PrefixedULID, txn: TransactionDependency) -> GetDiffResponse:
+    diff = load_diff_with_relations(txn, diff_id)
     return GetDiffResponse(diff=diff)
 
 
 @ROUTER.post("/comments")
 def create_comment(
-    request: CreateCommentRequest, session: SessionDependency
+    request: CreateCommentRequest, txn: TransactionDependency
 ) -> CreateCommentResponse:
-    db_comment = request.to_db()
-    session.add(db_comment)
-    session.commit()
-    session.refresh(db_comment)
-    comment = Comment.from_db(db_comment)
-    return CreateCommentResponse(comment=comment)
+    comment_id = generate_prefixed_ulid("c")
+    comment = Comment(
+        id=comment_id,
+        text=request.text,
+        author=request.author,
+        timestamp=datetime.now(UTC),
+        hunk_id=request.hunk_id,
+        diff_id=request.diff_id,
+        line_index=request.line_index,
+        start_offset=request.start_offset,
+        end_offset=request.end_offset,
+        in_reply_to=request.in_reply_to,
+    )
+    comment_doc = txn.put(Comment, comment_id, comment)
+    return CreateCommentResponse(comment=comment_doc.model)
 
 
 @ROUTER.put("/comments/{comment_id}")
 def update_comment(
-    comment_id: PrefixedULID, request: UpdateCommentRequest, session: SessionDependency
+    comment_id: PrefixedULID, request: UpdateCommentRequest, txn: TransactionDependency
 ) -> UpdateCommentResponse:
-    db_comment = (
-        session.query(DBComment)
-        .filter(DBComment.id == comment_id)
-        .with_for_update()
-        .first()
-    )
-    if not db_comment:
+    comment_doc = txn.get(Comment, comment_id)
+    if not comment_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found"
         )
-
-    db_comment.text = request.text
-    session.commit()
-    session.refresh(db_comment)
-    comment = Comment.from_db(db_comment)
-    return UpdateCommentResponse(comment=comment)
+    updated_comment = comment_doc.model.model_copy(update={"text": request.text})
+    comment_doc = txn.put(Comment, comment_id, updated_comment)
+    return UpdateCommentResponse(comment=comment_doc.model)
 
 
 @ROUTER.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_comment(comment_id: PrefixedULID, session: SessionDependency) -> None:
-    db_comment = session.query(DBComment).filter(DBComment.id == comment_id).first()
-    if not db_comment:
+def delete_comment(comment_id: PrefixedULID, txn: TransactionDependency) -> None:
+    comment_doc = txn.get(Comment, comment_id)
+    if not comment_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found"
         )
-    session.delete(db_comment)
-    session.commit()
+    all_comments = txn.all(Comment)
+    reply_ids = [c.model_id for c in all_comments if c.model.in_reply_to == comment_id]
+    for reply_id in reply_ids:
+        txn.delete(Comment, reply_id)
+    txn.delete(Comment, comment_id)
 
 
 @ROUTER.put("/diffs/{diff_id}")
 def update_diff(
-    diff_id: PrefixedULID, request: UpdateDiffRequest, session: SessionDependency
+    diff_id: PrefixedULID, request: UpdateDiffRequest, txn: TransactionDependency
 ) -> UpdateDiffResponse:
-    db_diff = (
-        session.query(DBDiff)
-        .options(selectinload(DBDiff.hunks).selectinload(DBHunk.lines))
-        .filter(DBDiff.id == diff_id)
-        .with_for_update()
-        .first()
-    )
-    if not db_diff:
+    try:
+        diff = load_diff_with_relations(txn, diff_id)
+    except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Diff not found"
-        )
-
-    # Update fields if provided
+        ) from None
+    updates: dict[str, str | None] = {}
     if request.name is not None:
-        db_diff.name = request.name
+        updates["name"] = request.name
     if "description" in request.model_fields_set:
-        db_diff.description = request.description
-    session.commit()
-    session.refresh(db_diff)
-
-    diff = Diff.from_db(db_diff)
+        updates["description"] = request.description
+    updated_diff = diff.model_copy(update=updates)
+    txn.put(Diff, diff_id, updated_diff)
+    diff = load_diff_with_relations(txn, diff_id)
     return UpdateDiffResponse(diff=diff)
 
 
 @ROUTER.put("/hunks/{hunk_id}")
 def update_hunk(
-    hunk_id: PrefixedULID, request: UpdateHunkRequest, session: SessionDependency
+    hunk_id: PrefixedULID, request: UpdateHunkRequest, txn: TransactionDependency
 ) -> UpdateHunkResponse:
-    db_hunk = (
-        session.query(DBHunk)
-        .options(selectinload(DBHunk.lines))
-        .filter(DBHunk.id == hunk_id)
-        .with_for_update()
-        .first()
-    )
-    if not db_hunk:
+    hunk_doc = txn.get(Hunk, hunk_id)
+    if not hunk_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Hunk not found"
         )
-
-    # Update fields if provided
+    hunk = hunk_doc.model
+    all_lines = txn.all(Line)
+    hunk.lines = [line.model for line in all_lines if line.model.hunk_id == hunk_id]
+    updates: dict[str, str | datetime | None] = {}
     if request.name is not None:
-        db_hunk.name = request.name
+        updates["name"] = request.name
     if "completed_at" in request.model_fields_set:
-        db_hunk.completed_at = request.completed_at
-
-    session.commit()
-    session.refresh(db_hunk)
-
-    hunk = Hunk.from_db(db_hunk)
+        updates["completed_at"] = request.completed_at
+    updated_hunk = hunk.model_copy(update=updates)
+    txn.put(Hunk, hunk_id, updated_hunk)
+    hunk_doc = txn.fetch(Hunk, hunk_id)
+    hunk = hunk_doc.model
+    hunk.lines = [line.model for line in all_lines if line.model.hunk_id == hunk_id]
     return UpdateHunkResponse(hunk=hunk)
 
 
 @ROUTER.delete("/diffs/{diff_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_diff(diff_id: PrefixedULID, session: SessionDependency) -> None:
-    db_diff = session.query(DBDiff).filter(DBDiff.id == diff_id).first()
-    if not db_diff:
+def delete_diff(diff_id: PrefixedULID, txn: TransactionDependency) -> None:
+    diff_doc = txn.get(Diff, diff_id)
+    if not diff_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Diff not found"
         )
-    session.delete(db_diff)
-    session.commit()
+    all_hunks = txn.all(Hunk)
+    hunk_ids = [h.model_id for h in all_hunks if h.model.diff_id == diff_id]
+    all_lines = txn.all(Line)
+    for hunk_id in hunk_ids:
+        line_ids = [
+            line.model_id for line in all_lines if line.model.hunk_id == hunk_id
+        ]
+        for line_id in line_ids:
+            txn.delete(Line, line_id)
+        txn.delete(Hunk, hunk_id)
+    all_comments = txn.all(Comment)
+    comment_ids = [c.model_id for c in all_comments if c.model.diff_id == diff_id]
+    for comment_id in comment_ids:
+        txn.delete(Comment, comment_id)
+    txn.delete(Diff, diff_id)

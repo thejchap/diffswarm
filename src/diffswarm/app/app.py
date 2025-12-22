@@ -1,8 +1,5 @@
 import logging
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Never
 
 from fastapi import (
     FastAPI,
@@ -12,25 +9,14 @@ from fastapi import (
 )
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.exc import NoResultFound, SQLAlchemyError
+from sapling.errors import NotFoundError
 
-from diffswarm.app.settings import get_settings
-
-from .database import ENGINE, Base
 from .routers import API, PAGES
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    if get_settings().database_create_all:
-        Base.metadata.create_all(ENGINE)
-    yield
-
-
-APP = FastAPI(lifespan=lifespan)
+APP = FastAPI()
 APP.add_middleware(GZipMiddleware)
 APP.include_router(PAGES)
 APP.include_router(API, prefix="/api")
@@ -41,12 +27,6 @@ APP.mount(
 )
 
 
-@APP.exception_handler(NoResultFound)
-def no_result_found_handler(_request: Request, _exc: NoResultFound) -> Never:
+@APP.exception_handler(NotFoundError)
+def not_found_error_handler(_request: Request, _exc: NotFoundError) -> Exception:
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-
-
-@APP.exception_handler(SQLAlchemyError)
-def sql_alchemy_error_handler(_request: Request, exc: SQLAlchemyError) -> Never:
-    LOGGER.error("SQLAlchemyError", exc_info=exc)
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
