@@ -135,8 +135,7 @@ def delete_comment(comment_id: PrefixedULID, txn: TransactionDependency) -> None
         )
     all_comments = txn.all(Comment)
     reply_ids = [c.model_id for c in all_comments if c.model.in_reply_to == comment_id]
-    for reply_id in reply_ids:
-        txn.delete(Comment, reply_id)
+    txn.delete_many(Comment, reply_ids)
     txn.delete(Comment, comment_id)
 
 
@@ -196,15 +195,14 @@ def delete_diff(diff_id: PrefixedULID, txn: TransactionDependency) -> None:
     all_hunks = txn.all(Hunk)
     hunk_ids = [h.model_id for h in all_hunks if h.model.diff_id == diff_id]
     all_lines = txn.all(Line)
-    for hunk_id in hunk_ids:
-        line_ids = [
-            line.model_id for line in all_lines if line.model.hunk_id == hunk_id
-        ]
-        for line_id in line_ids:
-            txn.delete(Line, line_id)
-        txn.delete(Hunk, hunk_id)
+    line_ids = [
+        line.model_id
+        for line in all_lines
+        if any(line.model.hunk_id == hunk_id for hunk_id in hunk_ids)
+    ]
     all_comments = txn.all(Comment)
     comment_ids = [c.model_id for c in all_comments if c.model.diff_id == diff_id]
-    for comment_id in comment_ids:
-        txn.delete(Comment, comment_id)
+    txn.delete_many(Line, line_ids)
+    txn.delete_many(Hunk, hunk_ids)
+    txn.delete_many(Comment, comment_ids)
     txn.delete(Diff, diff_id)

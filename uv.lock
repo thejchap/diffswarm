@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -748,7 +748,7 @@ wheels = [
 [[package]]
 name = "sapling"
 version = "0.1.0"
-source = { git = "https://github.com/thejchap/sapling.git#083f558227d2dee1ce607bc2d8a9d371d6e90a86" }
+source = { git = "https://github.com/thejchap/sapling.git#745c57e74d3e79c9177b4532b80775fac1aa0b66" }
 dependencies = [
     { name = "pydantic" },
 ]
