@@ -70,8 +70,8 @@ def create_diff(
         lines: list[Line] = []
         for line_data in hunk_data.lines:
             line_id = generate_prefixed_ulid("l")
-            line = Line.model_construct(
-                id_=line_id,
+            line = Line(
+                id=line_id,
                 hunk_id=hunk_id,
                 type=line_data.type,
                 content=line_data.content,
@@ -80,8 +80,8 @@ def create_diff(
             )
             lines.append(line)
             txn.put(Line, line_id, line)
-        hunk = Hunk.model_construct(
-            id_=hunk_id,
+        hunk = Hunk(
+            id=hunk_id,
             diff_id=diff_id,
             name=hunk_id,
             from_start=hunk_data.from_start,
@@ -89,12 +89,12 @@ def create_diff(
             to_start=hunk_data.to_start,
             to_count=hunk_data.to_count,
             completed_at=None,
-            lines=lines,
+            lines=[],
         )
         hunks.append(hunk)
         txn.put(Hunk, hunk_id, hunk)
-    diff = Diff.model_construct(
-        id_=diff_id,
+    diff = Diff(
+        id=diff_id,
         name=diff_id,
         raw=body.raw,
         from_filename=body.from_filename,
@@ -102,7 +102,7 @@ def create_diff(
         to_filename=body.to_filename,
         to_timestamp=body.to_timestamp,
         description=None,
-        hunks=hunks,
+        hunks=[],
     )
     txn.put(Diff, diff_id, diff)
     res.headers["X-Diff-ID"] = diff_id

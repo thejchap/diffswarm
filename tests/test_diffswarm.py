@@ -8,10 +8,27 @@ from pydantic import TypeAdapter, ValidationError
 from starlette import status
 
 from diffswarm import APP
+from diffswarm.app.database import get_database
 from diffswarm.app.models import DiffBase, PrefixedULID, generate_prefixed_ulid
+from diffswarm.app.settings import get_settings
 
 # Constants
 PREFIXED_ULID_LENGTH = 28  # prefix + hyphen + 26 character ULID
+
+
+@pytest.fixture(autouse=True)
+def clean_database() -> Generator[None]:
+    get_database.cache_clear()
+    get_settings.cache_clear()
+    settings = get_settings()
+    db_path = Path(settings.database_url.replace("sqlite:///", ""))
+    if db_path.exists():
+        db_path.unlink()
+    db_path.with_suffix(".sqlite3-shm").unlink(missing_ok=True)
+    db_path.with_suffix(".sqlite3-wal").unlink(missing_ok=True)
+    yield
+    get_database.cache_clear()
+    get_settings.cache_clear()
 
 
 @pytest.fixture(name="client")

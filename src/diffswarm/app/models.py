@@ -27,10 +27,6 @@ def validate_prefixed_ulid(raw: str) -> str:
     return f"{prefix}-{ULID.parse(ulid.upper())}".lower()
 
 
-def generate_prefixed_ulid(prefix: str) -> str:
-    return f"{prefix}-{ULID()}".lower()
-
-
 PrefixedULID = Annotated[
     str,
     StringConstraints(
@@ -42,10 +38,16 @@ PrefixedULID = Annotated[
 ]
 
 
+def generate_prefixed_ulid(prefix: str) -> PrefixedULID:
+    return f"{prefix}-{ULID()}".lower()
+
+
 class DiffSwarmBaseModel(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="forbid",
         populate_by_name=True,
+        from_attributes=True,
+        serialize_by_alias=True,
     )
 
 
@@ -74,10 +76,10 @@ class LineBase(BaseModel):
     line_number_new: int | None = None
 
 
-class Line(BaseModel):
+class Line(DiffSwarmBaseModel):
     """Line model with ID column for database persistence."""
 
-    id_: PrefixedULID | None = Field(None, alias="id")
+    id_: PrefixedULID = Field(alias="id")
     hunk_id: PrefixedULID
     type: LineType
     content: str
@@ -97,7 +99,7 @@ class HunkBase(DiffSwarmBaseModel):
     @field_validator("lines")
     @classmethod
     def validate_line_counts(cls, v: Any, info: ValidationInfo) -> Any:  # noqa: ANN401
-        if "from_count" not in info.data or "to_count" not in info.data:
+        if not v or "from_count" not in info.data or "to_count" not in info.data:
             return v
         from_count = info.data["from_count"]
         to_count = info.data["to_count"]
@@ -117,8 +119,7 @@ class HunkBase(DiffSwarmBaseModel):
 class Hunk(DiffSwarmBaseModel):
     """Hunk model with ID column for database persistence."""
 
-    model_config = ConfigDict(from_attributes=True)
-    id_: PrefixedULID | None = Field(None, alias="id")
+    id_: PrefixedULID = Field(alias="id")
     diff_id: PrefixedULID
     name: str | None = None  # Display name, defaults to id
     from_start: int = Field(..., ge=0)
@@ -126,12 +127,12 @@ class Hunk(DiffSwarmBaseModel):
     to_start: int = Field(..., ge=0)
     to_count: int = Field(..., ge=0)
     completed_at: datetime | None = None
-    lines: list[Line]
+    lines: list[Line] = []
 
     @field_validator("lines")
     @classmethod
     def validate_line_counts(cls, v: Any, info: ValidationInfo) -> Any:  # noqa: ANN401
-        if "from_count" not in info.data or "to_count" not in info.data:
+        if not v or "from_count" not in info.data or "to_count" not in info.data:
             return v
         from_count = info.data["from_count"]
         to_count = info.data["to_count"]
@@ -468,7 +469,6 @@ class UnifiedDiffParser:
 
 
 class Diff(DiffSwarmBaseModel):
-    model_config = ConfigDict(from_attributes=True)
     id_: PrefixedULID = Field(..., alias="id")
     name: str  # Display name, defaults to id
     raw: str
@@ -477,11 +477,10 @@ class Diff(DiffSwarmBaseModel):
     to_filename: str
     to_timestamp: datetime | None = None
     description: str | None = None
-    hunks: list[Hunk]
+    hunks: list[Hunk] = []
 
 
 class Comment(DiffSwarmBaseModel):
-    model_config = ConfigDict(from_attributes=True)
     id_: PrefixedULID = Field(..., alias="id")
     text: str
     author: str

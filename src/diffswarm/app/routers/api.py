@@ -69,9 +69,18 @@ def load_diff_with_relations(txn: TransactionDependency, diff_id: str) -> Diff:
     hunks_for_diff = [h.model for h in all_hunks if h.model.diff_id == diff_id]
     all_lines = txn.all(Line)
     for hunk in hunks_for_diff:
-        hunk.lines = [
-            line.model for line in all_lines if line.model.hunk_id == hunk.id_
-        ]
+        lines = [line.model for line in all_lines if line.model.hunk_id == hunk.id_]
+        hunk.lines = sorted(
+            lines,
+            key=lambda line: (
+                line.line_number_old
+                if line.line_number_old is not None
+                else float("inf"),
+                line.line_number_new
+                if line.line_number_new is not None
+                else float("inf"),
+            ),
+        )
     diff.hunks = hunks_for_diff
     return diff
 
