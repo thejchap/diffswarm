@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     forwarded_allow_ips: str | None = None
 
     @property
+    def database_path(self) -> str:
+        return self.database_url.replace("sqlite:///", "")
+
+    @property
     def git_hash(self) -> str:
         revision_file = Path("REVISION")
         if revision_file.exists():
