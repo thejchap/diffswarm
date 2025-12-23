@@ -7,7 +7,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env")
-    database_url: str = "sqlite:///db/diffswarm-dev-sapling.sqlite3"
     port: int = 8000
     host: str = "localhost"
     forwarded_allow_ips: str | None = None

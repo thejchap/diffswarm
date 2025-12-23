@@ -15,7 +15,7 @@ services:
     volumes:
       - db:/etc/db
     environment:
-      DATABASE_URL: "sqlite:////etc/db/diffswarm-dev.sqlite3"
+      SAPLING_SQLITE_PATH: "/etc/db/diffswarm-dev-sapling.sqlite3"
       HOST: 0.0.0.0
 volumes:
   db:
