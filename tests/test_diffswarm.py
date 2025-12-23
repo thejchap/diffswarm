@@ -8,21 +8,10 @@ from pydantic import TypeAdapter, ValidationError
 from starlette import status
 
 from diffswarm import APP
-from diffswarm.app.database import get_database
 from diffswarm.app.models import DiffBase, PrefixedULID, generate_prefixed_ulid
-from diffswarm.app.settings import get_settings
 
 # Constants
 PREFIXED_ULID_LENGTH = 28  # prefix + hyphen + 26 character ULID
-
-
-@pytest.fixture(autouse=True)
-def clean_database() -> Generator[None]:
-    get_database.cache_clear()
-    get_settings.cache_clear()
-    yield
-    get_database.cache_clear()
-    get_settings.cache_clear()
 
 
 @pytest.fixture(name="client")
