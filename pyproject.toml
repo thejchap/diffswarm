@@ -61,17 +61,11 @@ ignore = [
 ]
 fixable = ["ALL"]
 
-[tool.pyright]
-extraPaths = ["src"]
-typeCheckingMode = "strict"
-venvPath = "."
-venv = ".venv"
-
 [dependency-groups]
 dev = [
-  "basedpyright>=1.31.0",
   "pre-commit>=4.2.0",
   "pytest>=8.4.1",
   "pytest-env>=1.1.5",
   "ruff>=0.12.5",
+  "ty>=0.0.4",
 ]

@@ -17,7 +17,9 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
 APP = FastAPI()
-APP.add_middleware(GZipMiddleware)
+# ty doesn't yet handle _MiddlewareFactory Protocol with class constructors correctly
+# see: https://github.com/Kludex/starlette/discussions/2451
+APP.add_middleware(GZipMiddleware, minimum_size=500)  # type: ignore[invalid-argument-type]
 APP.include_router(PAGES)
 APP.include_router(API, prefix="/api")
 APP.mount(

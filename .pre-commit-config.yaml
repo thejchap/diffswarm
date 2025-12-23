@@ -21,8 +21,8 @@ repos:
         language: system
         types: [javascript, ts, tsx, jsx]
         pass_filenames: false
-      - id: basedpyright
+      - id: ty
         language: system
-        name: basedpyright
+        name: ty
         types: [python]
-        entry: uv run basedpyright
+        entry: uv run ty check
