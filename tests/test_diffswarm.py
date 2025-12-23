@@ -20,12 +20,6 @@ PREFIXED_ULID_LENGTH = 28  # prefix + hyphen + 26 character ULID
 def clean_database() -> Generator[None]:
     get_database.cache_clear()
     get_settings.cache_clear()
-    settings = get_settings()
-    db_path = Path(settings.database_url.replace("sqlite:///", ""))
-    if db_path.exists():
-        db_path.unlink()
-    db_path.with_suffix(".sqlite3-shm").unlink(missing_ok=True)
-    db_path.with_suffix(".sqlite3-wal").unlink(missing_ok=True)
     yield
     get_database.cache_clear()
     get_settings.cache_clear()
