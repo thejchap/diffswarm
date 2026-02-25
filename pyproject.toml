@@ -33,7 +33,6 @@ target-version = "py313"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["S101"]
-"src/diffswarm/app/settings.py" = ["S603"]
 
 [tool.ruff.lint.pycodestyle]
 max-line-length = 88

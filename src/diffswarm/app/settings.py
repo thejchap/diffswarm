@@ -11,7 +11,7 @@ def _resolve_git_hash() -> str:
     if not git:
         return "dev"
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [git, "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
