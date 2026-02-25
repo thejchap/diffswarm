@@ -2057,6 +2057,10 @@ function Line({ line, hunkId, lineIndex }) {
   };
 
   const handleLineClick = () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      return;
+    }
     setShowCommentForm(true);
   };
 
@@ -2352,6 +2356,7 @@ function Hunk({ hunk, hunkIndex }) {
             /** @param {any} line */
             (line, /** @type {number} */ lineIndex) =>
               html`<${Line}
+                key=${line.id}
                 line=${line}
                 hunkId=${hunkId}
                 lineIndex=${lineIndex}
@@ -3182,7 +3187,11 @@ function App() {
                       (h) => h.id === hunk.id,
                     );
                     return html`
-                      <${LazyHunk} hunk=${hunk} hunkIndex=${originalIndex} />
+                      <${LazyHunk}
+                        key=${hunk.id}
+                        hunk=${hunk}
+                        hunkIndex=${originalIndex}
+                      />
                     `;
                   },
                 )}
