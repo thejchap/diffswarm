@@ -58,6 +58,8 @@ ignore = [
   "FIX003",
   "TD003",
   "ERA001",
+  # partial executable path in subprocess
+  "S607",
 ]
 fixable = ["ALL"]
 

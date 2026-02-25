@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 def _resolve_git_hash() -> str:
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],  # noqa: S607
+            ["git", "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
             check=False,
