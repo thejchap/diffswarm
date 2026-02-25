@@ -1,5 +1,4 @@
 from functools import cache
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,13 +9,7 @@ class Settings(BaseSettings):
     port: int = 8000
     host: str = "localhost"
     forwarded_allow_ips: str | None = None
-
-    @property
-    def git_hash(self) -> str:
-        revision_file = Path("REVISION")
-        if revision_file.exists():
-            return revision_file.read_text().strip()
-        return "dev"
+    git_hash: str = "dev"
 
 
 @cache

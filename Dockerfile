@@ -12,4 +12,6 @@ RUN --mount=type=secret,id=SAPLING_TOKEN \
 ADD . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --locked
+ARG GIT_HASH=dev
+ENV GIT_HASH=${GIT_HASH}
 CMD ["/app/.venv/bin/diffswarm-server"]
