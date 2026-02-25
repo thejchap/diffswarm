@@ -17,5 +17,6 @@ services:
     environment:
       SAPLING_SQLITE_PATH: "/etc/db/diffswarm-dev-sapling.sqlite3"
       HOST: 0.0.0.0
+      GIT_HASH: ${GIT_HASH:-dev}
 volumes:
   db:
