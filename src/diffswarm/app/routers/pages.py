@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BeforeValidator
 from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT
 
-from diffswarm.app.dependencies import TransactionDependency
+from diffswarm.app.dependencies import SettingsDependency, TransactionDependency
 from diffswarm.app.models import (
     Comment,
     Diff,
@@ -39,6 +39,7 @@ def get_diff(
     request: Request,
     diff_id: PrefixedULID,
     txn: TransactionDependency,
+    settings: SettingsDependency,
 ) -> HTMLResponse:
     diff = load_diff_with_relations(txn, diff_id)
     all_comments = txn.all(Comment)
@@ -47,7 +48,7 @@ def get_diff(
     return TEMPLATES.TemplateResponse(
         request=request,
         name="pages/diff.html",
-        context={"diff": diff, "comments": comments},
+        context={"diff": diff, "comments": comments, "git_hash": settings.git_hash},
     )
 
 
