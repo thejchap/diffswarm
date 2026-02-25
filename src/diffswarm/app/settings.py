@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from functools import cache
 from typing import ClassVar
@@ -6,9 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _resolve_git_hash() -> str:
+    git = shutil.which("git")
+    if not git:
+        return "dev"
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            [git, "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
             check=False,
