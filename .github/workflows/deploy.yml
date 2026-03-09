@@ -21,7 +21,7 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run ty check
-      - run: uv run pytest
+      - run: uv run tryke test -v
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - run: flyctl deploy --remote-only --build-arg GIT_HASH=${{ github.sha }}
         env:
