@@ -13,8 +13,6 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: configure git for private repo access
-        run: git config --global url."https://x-access-token:${{ secrets.SAPLING_ACCESS_TOKEN }}@github.com/".insteadOf "https://github.com/"
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -25,6 +23,6 @@ jobs:
       - run: uv run ty check
       - run: uv run pytest
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only --build-arg GIT_HASH=${{ github.sha }} --build-secret SAPLING_TOKEN=${{ secrets.SAPLING_ACCESS_TOKEN }}
+      - run: flyctl deploy --remote-only --build-arg GIT_HASH=${{ github.sha }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

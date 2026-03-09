@@ -31,9 +31,6 @@ line-length = 88
 indent-width = 4
 target-version = "py313"
 
-[tool.ruff.lint.per-file-ignores]
-"tests/*.py" = ["S101"]
-
 [tool.ruff.lint.pycodestyle]
 max-line-length = 88
 
@@ -64,8 +61,7 @@ fixable = ["ALL"]
 [dependency-groups]
 dev = [
   "pre-commit>=4.2.0",
-  "pytest>=8.4.1",
-  "pytest-env>=1.1.5",
+  "tryke @ git+https://github.com/thejchap/tryke",
   "ruff>=0.12.5",
   "ty>=0.0.4",
 ]

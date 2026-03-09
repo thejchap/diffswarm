@@ -26,6 +26,7 @@ uv run ruff check # linter
 uv run ruff format # formatter
 bun run tsc # frontend types
 bun run prettier . --check # frontend style
+uvx tryke test # tests (uses --reporter llm)
 ```
 
 ### Rules
