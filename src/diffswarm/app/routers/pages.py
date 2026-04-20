@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BeforeValidator
 from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT
+from tryke_guard import __TRYKE_TESTING__
 
 from diffswarm.app.dependencies import SettingsDependency, TransactionDependency
 from diffswarm.app.models import (
@@ -129,3 +130,74 @@ def delete_diff(diff_id: PrefixedULID, txn: TransactionDependency) -> None:
     for comment_id in comment_ids:
         txn.delete(Comment, comment_id)
     txn.delete(Diff, diff_id)
+
+
+if __TRYKE_TESTING__:
+    from starlette import status
+    from tryke import expect, test
+
+    from diffswarm.app._testing import _client
+
+    @test(name="get home page")
+    def test_get_home() -> None:
+        with _client() as client:
+            res = client.get("/")
+            expect(res.status_code, name="status code").to_equal(status.HTTP_200_OK)
+            expect(res.text, name="body contains diffswarm").to_contain("diffswarm")
+            expect(res.text, name="body contains html tag").to_contain("<html")
+
+    @test(name="get diff not found page")
+    def test_get_diff_not_found_pages() -> None:
+        with _client() as client:
+            res = client.get(f"/diffs/{generate_prefixed_ulid('d')}")
+            expect(res.status_code, name="status code").to_equal(
+                status.HTTP_404_NOT_FOUND
+            )
+
+    @test(name="create and get diff page")
+    def test_create_get_diff_pages() -> None:
+        with _client() as client:
+            res = client.post(
+                "/",
+                content=DiffBase.HELLO_WORLD,
+                headers={"Content-Type": "text/plain"},
+            )
+            expect(res.status_code, name="create status").to_equal(
+                status.HTTP_201_CREATED
+            )
+            diff_id = res.headers["X-Diff-ID"]
+            res = client.get(f"/{diff_id}")
+            expect(res.status_code, name="get status").to_equal(status.HTTP_200_OK)
+            body = res.text
+            expect(body, name="body contains html tag").to_contain("<html")
+
+    @test(name="delete diff page")
+    def test_delete_diff_pages() -> None:
+        with _client() as client:
+            res = client.post(
+                "/",
+                content=DiffBase.HELLO_WORLD,
+                headers={"Content-Type": "text/plain"},
+            )
+            expect(res.status_code, name="create status").to_equal(
+                status.HTTP_201_CREATED
+            )
+            diff_id = res.headers["X-Diff-ID"]
+            res = client.get(f"/{diff_id}")
+            expect(res.status_code, name="get status").to_equal(status.HTTP_200_OK)
+            res = client.delete(f"/{diff_id}")
+            expect(res.status_code, name="delete status").to_equal(
+                status.HTTP_204_NO_CONTENT
+            )
+            res = client.get(f"/{diff_id}")
+            expect(res.status_code, name="get after delete status").to_equal(
+                status.HTTP_404_NOT_FOUND
+            )
+
+    @test(name="delete diff not found page")
+    def test_delete_diff_not_found_pages() -> None:
+        with _client() as client:
+            res = client.delete(f"/{generate_prefixed_ulid('d')}")
+            expect(res.status_code, name="status code").to_equal(
+                status.HTTP_404_NOT_FOUND
+            )

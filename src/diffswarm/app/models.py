@@ -19,6 +19,7 @@ from pydantic import (
     ValidationInfo,
     field_validator,
 )
+from tryke_guard import __TRYKE_TESTING__
 from ulid import ULID
 
 
@@ -491,3 +492,44 @@ class Comment(DiffSwarmBaseModel):
     start_offset: int
     end_offset: int
     in_reply_to: PrefixedULID | None = None
+
+
+if __TRYKE_TESTING__:
+    from pathlib import Path
+
+    from pydantic import TypeAdapter, ValidationError
+    from tryke import expect, test
+
+    @test(name="parse diff fixture 1")
+    def test_parse_diff_1() -> None:
+        with Path.open(Path(__file__).parent / "fixtures/1.diff") as f:
+            diff = f.read()
+
+        expect(DiffBase.parse_str(diff), name="parsed diff").to_be_truthy()
+
+    @test(name="parse diff fixture 2")
+    def test_parse_diff_2() -> None:
+        with Path.open(Path(__file__).parent / "fixtures/2.diff") as f:
+            diff = f.read()
+
+        expect(DiffBase.parse_str(diff), name="parsed diff").to_be_truthy()
+
+    _ta = TypeAdapter[PrefixedULID](PrefixedULID)
+
+    def _validate(val: str) -> str:
+        return _ta.validate_python(val)
+
+    @test(name="prefixed ulid lowercases input")
+    def test_prefixed_ulid_lower() -> None:
+        val = "a-01BX5ZZKBKACTAV9WEVGEMMVRZ"
+        expect(_validate(val), name="lowercased value").to_equal(val.lower())
+
+    @test(name="prefixed ulid rejects invalid")
+    def test_prefixed_ulid_invalid() -> None:
+        val = "a-01BX5ZZKBKACTAV9"
+        expect(lambda: _validate(val), name="invalid ulid").to_raise(ValidationError)
+
+    @test(name="prefixed ulid identity")
+    def test_prefixed_ulid_identity() -> None:
+        val = generate_prefixed_ulid("a")
+        expect(_validate(val), name="identity value").to_equal(val)
