@@ -48,20 +48,17 @@ def get_diff(
 ) -> HTMLResponse:
     experimental = "experimental-pierre-rendering" in request.query_params
     with database.read_transaction() as txn:
-        if experimental:
-            diff = txn.fetch(Diff, diff_id).model
-            comments = []
-        else:
-            diff = load_diff_with_relations(txn, diff_id)
-            comments = txn.comments_for_diff(diff_id)
+        diff = load_diff_with_relations(txn, diff_id)
+        comments = txn.comments_for_diff(diff_id)
     comments.sort(key=lambda c: c.timestamp)
     return TEMPLATES.TemplateResponse(
         request=request,
-        name="pages/pierre.html" if experimental else "pages/diff.html",
+        name="pages/diff.html",
         context={
             "diff": diff,
             "comments": comments,
             "git_hash": settings.git_hash,
+            "experimental_pierre": experimental,
             "normal_view_url": str(
                 request.url.remove_query_params("experimental-pierre-rendering")
             ),
@@ -220,6 +217,7 @@ if __TRYKE_TESTING__:
 
     @test(name="query flag selects Pierre while ordinary pages keep the normal viewer")
     def test_pierre_page_selection() -> None:
+        import json  # noqa: PLC0415
         import re  # noqa: PLC0415
         from html import unescape  # noqa: PLC0415
 
@@ -236,7 +234,7 @@ if __TRYKE_TESTING__:
                 expect(response.status_code).to_equal(status.HTTP_200_OK)
                 expect(response.text).to_contain("/static/js/diff.js?")
                 expect(response.text).to_contain("data-comments-prefetch=")
-                expect('id="pierre-viewer"' in response.text).to_be_falsy()
+                expect(response.text).to_contain('data-renderer="default"')
             for query in (
                 "?experimental-pierre-rendering",
                 "?experimental-pierre-rendering=1",
@@ -244,12 +242,15 @@ if __TRYKE_TESTING__:
             ):
                 response = client.get(f"/{diff_id}{query}")
                 expect(response.status_code).to_equal(status.HTTP_200_OK)
-                expect(response.text).to_contain("/static/js/pierre.js?")
-                expect("data-comments-prefetch=" in response.text).to_be_falsy()
-                expect("data-diff-prefetch=" in response.text).to_be_falsy()
-                patch_match = re.search(r'data-patch="([^"]*)"', response.text)
-                assert patch_match is not None  # noqa: S101
-                expect(unescape(patch_match.group(1))).to_equal(DiffBase.HELLO_WORLD)
+                expect(response.text).to_contain("/static/js/diff.js?")
+                expect(response.text).to_contain('data-renderer="pierre"')
+                expect(response.text).to_contain('"@pierre/diffs"')
+                expect(response.text).to_contain("data-comments-prefetch=")
+                diff_match = re.search(r'data-diff-prefetch="([^"]*)"', response.text)
+                assert diff_match is not None  # noqa: S101
+                expect(json.loads(unescape(diff_match.group(1)))).to_equal(
+                    original["diff"]
+                )
             expect(response.text).to_contain(f"/{diff_id}?search=hello")
             expect(client.get(f"/api/diffs/{diff_id}").json()).to_equal(original)
 

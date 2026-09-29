@@ -20,6 +20,11 @@ if (!$APP) {
 }
 const { diffPrefetch: DIFF_PREFETCH, commentsPrefetch: COMMENTS_PREFETCH } =
   $APP.dataset;
+const EXPERIMENTAL_PIERRE = $APP.dataset.renderer === "pierre";
+const NORMAL_VIEW_URL = $APP.dataset.normalViewUrl || window.location.pathname;
+const PierreViewer = EXPERIMENTAL_PIERRE
+  ? (await import("./pierre.js")).PierreViewer
+  : null;
 
 /**
  * Updates URL search parameter without page reload
@@ -2955,7 +2960,7 @@ function FileHeader() {
           <button
             onClick=${async () => {
               try {
-                const link = `${window.location.origin}${window.location.pathname}`;
+                const link = `${window.location.origin}${window.location.pathname}${EXPERIMENTAL_PIERRE ? "?experimental-pierre-rendering" : ""}`;
                 // Try modern clipboard API first (HTTPS required)
                 if (navigator.clipboard && window.isSecureContext) {
                   await navigator.clipboard.writeText(link);
@@ -3022,7 +3027,8 @@ function FileHeader() {
               class="w-3.5 h-3.5 text-gray-400 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors"
             />
           </button>
-          <button
+          ${!EXPERIMENTAL_PIERRE &&
+          html`<button
             onClick=${toggleAllHunks}
             class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group hover:scale-105 shadow-sm cursor-pointer"
             aria-label=${allVisibleHunksCollapsed
@@ -3043,7 +3049,7 @@ function FileHeader() {
                     class="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors"
                   />
                 `}
-          </button>
+          </button>`}
         </div>
       </div>
 
@@ -3051,7 +3057,8 @@ function FileHeader() {
       <${DiffDescription} />
 
       <!-- search wrapper -->
-      <div class="flex items-center gap-4">
+      ${!EXPERIMENTAL_PIERRE &&
+      html`<div class="flex items-center gap-4">
         <${DiffSearch} />
         <${HunkFilter}
           currentFilter=${appState.currentFilter.value}
@@ -3062,7 +3069,7 @@ function FileHeader() {
           uncompletedCount=${uncompletedCount}
           totalCount=${totalCount}
         />
-      </div>
+      </div>`}
 
       <!-- next -->
     </div>
@@ -3166,7 +3173,7 @@ function App() {
   }, [appState.searchQuery.value]);
 
   useEffect(() => appState.cancelSearch, []);
-  const filteredHunks = appState.filteredHunks.value;
+  const filteredHunks = EXPERIMENTAL_PIERRE ? [] : appState.filteredHunks.value;
 
   return html`
     <!-- DiffViewer  -->
@@ -3182,42 +3189,48 @@ function App() {
         </div>
 
         <!-- main content -->
-        <div>
-          <div
-            class="divide-y divide-gray-200/50 dark:divide-monokai-border/50"
-          >
-            ${filteredHunks.length === 0
-              ? html`
-                  <div class="p-8 text-center">
-                    <div class="text-gray-500 dark:text-monokai-muted">
-                      <div class="text-lg font-medium mb-2">
-                        No hunks match the current filter
+        ${EXPERIMENTAL_PIERRE
+          ? html`<${PierreViewer}
+              raw=${diff.value.raw}
+              diffId=${diff.value.id}
+              normalViewUrl=${NORMAL_VIEW_URL}
+            />`
+          : html`<div>
+              <div
+                class="divide-y divide-gray-200/50 dark:divide-monokai-border/50"
+              >
+                ${filteredHunks.length === 0
+                  ? html`
+                      <div class="p-8 text-center">
+                        <div class="text-gray-500 dark:text-monokai-muted">
+                          <div class="text-lg font-medium mb-2">
+                            No hunks match the current filter
+                          </div>
+                          <div class="text-sm">
+                            ${appState.currentFilter.value === "completed" &&
+                            "No hunks have been completed yet."}
+                            ${appState.currentFilter.value === "uncompleted" &&
+                            "All hunks have been completed!"}
+                          </div>
+                        </div>
                       </div>
-                      <div class="text-sm">
-                        ${appState.currentFilter.value === "completed" &&
-                        "No hunks have been completed yet."}
-                        ${appState.currentFilter.value === "uncompleted" &&
-                        "All hunks have been completed!"}
-                      </div>
-                    </div>
-                  </div>
-                `
-              : filteredHunks.map(
-                  /** @param {any} hunk */
-                  (hunk) => {
-                    // Find the original index for collapsed state management
-                    const originalIndex = appState.hunkIndices.get(hunk.id);
-                    return html`
-                      <${LazyHunk}
-                        key=${hunk.id}
-                        hunk=${hunk}
-                        hunkIndex=${originalIndex}
-                      />
-                    `;
-                  },
-                )}
-          </div>
-        </div>
+                    `
+                  : filteredHunks.map(
+                      /** @param {any} hunk */
+                      (hunk) => {
+                        // Find the original index for collapsed state management
+                        const originalIndex = appState.hunkIndices.get(hunk.id);
+                        return html`
+                          <${LazyHunk}
+                            key=${hunk.id}
+                            hunk=${hunk}
+                            hunkIndex=${originalIndex}
+                          />
+                        `;
+                      },
+                    )}
+              </div>
+            </div>`}
       </div>
     </div>
   `;
