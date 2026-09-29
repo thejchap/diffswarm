@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
@@ -5,7 +6,8 @@ from pydantic import Field
 from sapling.errors import NotFoundError
 from tryke_guard import __TRYKE_TESTING__
 
-from diffswarm.app.dependencies import TransactionDependency
+from diffswarm.app.database import Database
+from diffswarm.app.dependencies import DatabaseDependency, TransactionDependency
 from diffswarm.app.models import (
     Comment,
     Diff,
@@ -76,16 +78,15 @@ class UpdateCommentResponse(DiffSwarmBaseModel):
     comment: Comment
 
 
-def load_diff_with_relations(txn: TransactionDependency, diff_id: str) -> Diff:
-    diff_doc = txn.fetch(Diff, diff_id)
-    diff = diff_doc.model
-    all_hunks = txn.all(Hunk)
-    hunks_for_diff = [h.model for h in all_hunks if h.model.diff_id == diff_id]
-    all_lines = txn.all(Line)
-    for hunk in hunks_for_diff:
-        lines = [line.model for line in all_lines if line.model.hunk_id == hunk.id_]
+def load_diff_with_relations(txn: Database, diff_id: str) -> Diff:
+    diff = txn.fetch(Diff, diff_id).model
+    hunks = txn.hunks_for_diff(diff_id)
+    lines_by_hunk: dict[str, list[Line]] = defaultdict(list)
+    for line in txn.lines_for_diff(diff_id):
+        lines_by_hunk[line.hunk_id].append(line)
+    for hunk in hunks:
         hunk.lines = sorted(
-            lines,
+            lines_by_hunk[hunk.id_],
             key=lambda line: (
                 line.line_number_old
                 if line.line_number_old is not None
@@ -95,13 +96,14 @@ def load_diff_with_relations(txn: TransactionDependency, diff_id: str) -> Diff:
                 else float("inf"),
             ),
         )
-    diff.hunks = hunks_for_diff
+    diff.hunks = hunks
     return diff
 
 
 @ROUTER.get("/diffs/{diff_id}")
-def get_diff(diff_id: PrefixedULID, txn: TransactionDependency) -> GetDiffResponse:
-    diff = load_diff_with_relations(txn, diff_id)
+def get_diff(diff_id: PrefixedULID, database: DatabaseDependency) -> GetDiffResponse:
+    with database.read_transaction() as txn:
+        diff = load_diff_with_relations(txn, diff_id)
     return GetDiffResponse(diff=diff)
 
 
@@ -224,8 +226,7 @@ if __TRYKE_TESTING__:
     from tryke import expect, test
 
     from diffswarm.app._testing import _client
-    from diffswarm.app.database import Database
-    from diffswarm.app.models import DiffBase
+    from diffswarm.app.models import DiffBase, LineType
 
     PREFIXED_ULID_LENGTH = 28  # prefix + hyphen + 26 character ULID
 
@@ -983,3 +984,54 @@ if __TRYKE_TESTING__:
             )
             body = res.json()
             expect(body["detail"], name="error detail").to_equal("Hunk not found")
+
+    @test(name="relation loading preserves hunk order and stable line number sorting")
+    def test_relation_ordering() -> None:
+        from diffswarm.app.database import get_database  # noqa: PLC0415
+
+        with _client() as client:
+            response = client.post(
+                "/",
+                content=DiffBase.HELLO_WORLD,
+                headers={"Content-Type": "text/plain"},
+            )
+            diff_id = response.headers["X-Diff-ID"]
+            with get_database().transaction() as txn:
+                original = txn.hunks_for_diff(diff_id)[0]
+                hunks = [
+                    original.model_copy(update={"id_": generate_prefixed_ulid("h")})
+                    for _ in range(3)
+                ]
+                hunks.sort(key=lambda hunk: hunk.id_)
+                for hunk in reversed(hunks):
+                    txn.put(Hunk, hunk.id_, hunk)
+                numbers = [(None, 3), (2, None), (1, 1), (None, 1), (None, 1)]
+                line_ids = sorted(generate_prefixed_ulid("l") for _ in numbers)
+                lines = [
+                    Line(
+                        id=line_ids[index],
+                        hunk_id=hunks[0].id_,
+                        type=LineType.ADD,
+                        content=str(index),
+                        line_number_old=old,
+                        line_number_new=new,
+                    )
+                    for index, (old, new) in enumerate(numbers)
+                ]
+                for line in reversed(lines):
+                    txn.put(Line, line.id_, line)
+            result = client.get(f"/api/diffs/{diff_id}").json()["diff"]["hunks"]
+            expect([h["id"] for h in result]).to_equal(
+                sorted([original.id_, *[h.id_ for h in hunks]])
+            )
+            expect(
+                [
+                    line["content"]
+                    for h in result
+                    if h["id"] == hunks[0].id_
+                    for line in h["lines"]
+                ]
+            ).to_equal(["2", "1", "3", "4", "0"])
+            expect(
+                next(h for h in result if h["id"] == hunks[-1].id_)["lines"]
+            ).to_equal([])

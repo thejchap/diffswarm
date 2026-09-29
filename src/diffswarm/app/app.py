@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import (
@@ -11,12 +13,20 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from sapling.errors import NotFoundError
 
+from .database import get_database
 from .routers import API, PAGES
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
-APP = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    get_database().initialize_schema()
+    yield
+
+
+APP = FastAPI(lifespan=lifespan)
 # ty doesn't yet handle _MiddlewareFactory Protocol with class constructors correctly
 # see: https://github.com/Kludex/starlette/discussions/2451
 APP.add_middleware(GZipMiddleware, minimum_size=500)  # type: ignore[invalid-argument-type]

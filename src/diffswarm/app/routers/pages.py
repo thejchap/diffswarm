@@ -6,7 +6,11 @@ from pydantic import BeforeValidator
 from starlette.status import HTTP_201_CREATED, HTTP_204_NO_CONTENT
 from tryke_guard import __TRYKE_TESTING__
 
-from diffswarm.app.dependencies import SettingsDependency, TransactionDependency
+from diffswarm.app.dependencies import (
+    DatabaseDependency,
+    SettingsDependency,
+    TransactionDependency,
+)
 from diffswarm.app.models import (
     Comment,
     Diff,
@@ -39,17 +43,29 @@ diff <(echo "foo") <(echo "foo\\nbar") -u | curl -X POST --data-binary @- {url}
 def get_diff(
     request: Request,
     diff_id: PrefixedULID,
-    txn: TransactionDependency,
+    database: DatabaseDependency,
     settings: SettingsDependency,
 ) -> HTMLResponse:
-    diff = load_diff_with_relations(txn, diff_id)
-    all_comments = txn.all(Comment)
-    comments = [c.model for c in all_comments if c.model.diff_id == diff_id]
+    experimental = "experimental-pierre-rendering" in request.query_params
+    with database.read_transaction() as txn:
+        if experimental:
+            diff = txn.fetch(Diff, diff_id).model
+            comments = []
+        else:
+            diff = load_diff_with_relations(txn, diff_id)
+            comments = txn.comments_for_diff(diff_id)
     comments.sort(key=lambda c: c.timestamp)
     return TEMPLATES.TemplateResponse(
         request=request,
-        name="pages/diff.html",
-        context={"diff": diff, "comments": comments, "git_hash": settings.git_hash},
+        name="pages/pierre.html" if experimental else "pages/diff.html",
+        context={
+            "diff": diff,
+            "comments": comments,
+            "git_hash": settings.git_hash,
+            "normal_view_url": str(
+                request.url.remove_query_params("experimental-pierre-rendering")
+            ),
+        },
     )
 
 
@@ -201,3 +217,59 @@ if __TRYKE_TESTING__:
             expect(res.status_code, name="status code").to_equal(
                 status.HTTP_404_NOT_FOUND
             )
+
+    @test(name="query flag selects Pierre while ordinary pages keep the normal viewer")
+    def test_pierre_page_selection() -> None:
+        import re  # noqa: PLC0415
+        from html import unescape  # noqa: PLC0415
+
+        with _client() as client:
+            response = client.post(
+                "/",
+                content=DiffBase.HELLO_WORLD,
+                headers={"Content-Type": "text/plain"},
+            )
+            diff_id = response.headers["X-Diff-ID"]
+            original = client.get(f"/api/diffs/{diff_id}").json()
+            for query in ("", "?search=hello", "?other-flag"):
+                response = client.get(f"/{diff_id}{query}")
+                expect(response.status_code).to_equal(status.HTTP_200_OK)
+                expect(response.text).to_contain("/static/js/diff.js?")
+                expect(response.text).to_contain("data-comments-prefetch=")
+                expect('id="pierre-viewer"' in response.text).to_be_falsy()
+            for query in (
+                "?experimental-pierre-rendering",
+                "?experimental-pierre-rendering=1",
+                "?experimental-pierre-rendering=false&search=hello",
+            ):
+                response = client.get(f"/{diff_id}{query}")
+                expect(response.status_code).to_equal(status.HTTP_200_OK)
+                expect(response.text).to_contain("/static/js/pierre.js?")
+                expect("data-comments-prefetch=" in response.text).to_be_falsy()
+                expect("data-diff-prefetch=" in response.text).to_be_falsy()
+                patch_match = re.search(r'data-patch="([^"]*)"', response.text)
+                assert patch_match is not None  # noqa: S101
+                expect(unescape(patch_match.group(1))).to_equal(DiffBase.HELLO_WORLD)
+            expect(response.text).to_contain(f"/{diff_id}?search=hello")
+            expect(client.get(f"/api/diffs/{diff_id}").json()).to_equal(original)
+
+    @test(name="experimental page escapes patch text and returns 404 for missing diffs")
+    def test_pierre_page_content() -> None:
+        with _client() as client:
+            raw = (
+                '--- old.html\n+++ new.html\n@@ -1 +1 @@\n-old\n+<script>"&"</script>\n'
+            )
+            response = client.post(
+                "/",
+                content=raw,
+                headers={"Content-Type": "text/plain"},
+            )
+            diff_id = response.headers["X-Diff-ID"]
+            response = client.get(f"/{diff_id}?experimental-pierre-rendering")
+            expect(response.status_code).to_equal(status.HTTP_200_OK)
+            expect(response.text).to_contain("&lt;script&gt;")
+            expect('<script>"&"</script>' in response.text).to_be_falsy()
+            response = client.get(
+                f"/{generate_prefixed_ulid('d')}?experimental-pierre-rendering"
+            )
+            expect(response.status_code).to_equal(status.HTTP_404_NOT_FOUND)

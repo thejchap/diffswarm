@@ -12,5 +12,6 @@ def get_transaction() -> Generator[Database]:
         yield txn
 
 
+DatabaseDependency = Annotated[Database, Depends(get_database)]
 TransactionDependency = Annotated[Database, Depends(get_transaction)]
 SettingsDependency = Annotated[Settings, Depends(get_settings)]

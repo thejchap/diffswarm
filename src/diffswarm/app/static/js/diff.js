@@ -2,8 +2,15 @@
 
 import { html } from "htm/preact";
 import { createContext, render } from "preact";
-import { signal } from "@preact/signals";
-import { useContext, useState, useEffect, useRef } from "preact/hooks";
+import { signal, computed, batch } from "@preact/signals";
+import {
+  useContext,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "preact/hooks";
+import { observeHunk, measureHunk, viewportWidth } from "./viewport.js";
 // @ts-ignore - marked is imported via importmap
 import { marked } from "marked";
 
@@ -105,9 +112,53 @@ function updateURLParameter(key, value) {
  *  editValue: import("@preact/signals").Signal<string>,
  *  collapsedHunks: import("@preact/signals").Signal<Set<number>>,
  *  currentFilter: import("@preact/signals").Signal<FilterType>,
- *  searchQuery: import("@preact/signals").Signal<string>
+ *  searchQuery: import("@preact/signals").Signal<string>,
+ *  searchInput: import("@preact/signals").Signal<string>,
+ *  setSearch: (query: string, immediate?: boolean) => void,
+ *  cancelSearch: () => void,
+ *  hunkIndices: Map<string | null, number>,
+ *  hunkStats: Map<string | null, { additions: number, deletions: number }>,
+ *  totalAdditions: number,
+ *  totalDeletions: number,
+ *  commentIndex: import("@preact/signals").ReadonlySignal<ReturnType<typeof indexComments>>,
+ *  matchingHunks: import("@preact/signals").ReadonlySignal<Hunk[]>,
+ *  completionHunks: import("@preact/signals").ReadonlySignal<Hunk[]>,
+ *  filteredHunks: import("@preact/signals").ReadonlySignal<Hunk[]>,
+ *  completedCount: import("@preact/signals").ReadonlySignal<number>
  * }} AppStateType
  */
+
+/** @param {Comment[]} comments */
+function indexComments(comments) {
+  /** @type {Map<string, Comment[]>} */
+  const allByHunk = new Map();
+  /** @type {Map<string, Comment[]>} */
+  const hunk = new Map();
+  /** @type {Map<string, Comment[]>} */
+  const line = new Map();
+  /** @type {Map<string, Comment[]>} */
+  const replies = new Map();
+  /** @type {Map<string, number>} */
+  const lineCounts = new Map();
+  /** @param {Map<string, Comment[]>} map @param {string} key @param {Comment} comment */
+  const append = (map, key, comment) => {
+    const group = map.get(key);
+    if (group) group.push(comment);
+    else map.set(key, [comment]);
+  };
+  for (const comment of comments) {
+    append(allByHunk, comment.hunkId, comment);
+    const lineKey = `${comment.hunkId}:${comment.lineIndex}`;
+    if (comment.lineIndex !== undefined) {
+      lineCounts.set(lineKey, (lineCounts.get(lineKey) || 0) + 1);
+    }
+    if (comment.parentId) append(replies, comment.parentId, comment);
+    else if (comment.lineIndex === undefined)
+      append(hunk, comment.hunkId, comment);
+    else append(line, lineKey, comment);
+  }
+  return { allByHunk, hunk, line, replies, lineCounts };
+}
 
 /**
  * @returns {AppStateType}
@@ -122,17 +173,36 @@ function createAppState() {
 
   const diff = signal(/** @type {Diff} */ (JSON.parse(DIFF_PREFETCH)));
 
+  const hunkIndices = new Map(
+    diff.value.hunks.map((hunk, index) => [hunk.id, index]),
+  );
+  const hunkStats = new Map(
+    diff.value.hunks.map((hunk) => {
+      let additions = 0;
+      let deletions = 0;
+      for (const line of hunk.lines) {
+        if (line.type === "ADD") additions++;
+        else if (line.type === "DELETE") deletions++;
+      }
+      return [hunk.id, { additions, deletions }];
+    }),
+  );
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+  for (const stats of hunkStats.values()) {
+    totalAdditions += stats.additions;
+    totalDeletions += stats.deletions;
+  }
+
   // Parse and transform prefetched comments to frontend format
   const prefetchedComments = JSON.parse(COMMENTS_PREFETCH);
   const transformedComments = prefetchedComments.map(
     (/** @type {any} */ comment) => {
       // Find the hunk index by ULID to create frontend hunk-{index} format
-      const hunkIndex = diff.value.hunks.findIndex(
-        (h) => h.id === comment.hunk_id,
-      );
+      const hunkIndex = hunkIndices.get(comment.hunk_id);
       return {
         ...comment,
-        hunkId: hunkIndex >= 0 ? `hunk-${hunkIndex}` : comment.hunk_id, // Convert to hunk-{index} for frontend
+        hunkId: hunkIndex !== undefined ? `hunk-${hunkIndex}` : comment.hunk_id, // Convert to hunk-{index} for frontend
         timestamp: new Date(comment.timestamp),
         diffId: comment.diff_id,
         lineIndex: comment.line_index === -1 ? undefined : comment.line_index,
@@ -160,7 +230,58 @@ function createAppState() {
   const initialSearchQuery = urlParams.get("search") || "";
   const searchQuery = signal(initialSearchQuery);
 
+  const searchInput = signal(initialSearchQuery);
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let searchTimer;
+  const cancelSearch = () => clearTimeout(searchTimer);
+  const setSearch = (/** @type {string} */ query, immediate = false) => {
+    cancelSearch();
+    batch(() => {
+      searchInput.value = query;
+      if (immediate || !query.trim()) searchQuery.value = query;
+      else
+        searchTimer = setTimeout(() => {
+          searchQuery.value = query;
+        }, 150);
+    });
+  };
+  const commentIndex = computed(() => indexComments(comments.value));
+  const matchingHunks = computed(() => {
+    const query = searchQuery.value;
+    if (!query.trim()) return diff.value.hunks;
+    const byHunk = commentIndex.value.allByHunk;
+    return diff.value.hunks.filter((hunk, index) =>
+      searchInHunk(hunk, query, byHunk.get(`hunk-${index}`) || []),
+    );
+  });
+  const passesCompletion = (/** @type {Hunk} */ hunk) =>
+    currentFilter.value === "all" ||
+    (currentFilter.value === "completed"
+      ? hunk.completed_at != null
+      : hunk.completed_at == null);
+  const completionHunks = computed(() =>
+    diff.value.hunks.filter(passesCompletion),
+  );
+  const filteredHunks = computed(() =>
+    matchingHunks.value.filter(passesCompletion),
+  );
+  const completedCount = computed(
+    () => diff.value.hunks.filter((hunk) => hunk.completed_at != null).length,
+  );
+
   return {
+    searchInput,
+    setSearch,
+    cancelSearch,
+    hunkIndices,
+    hunkStats,
+    totalAdditions,
+    totalDeletions,
+    commentIndex,
+    matchingHunks,
+    completionHunks,
+    filteredHunks,
+    completedCount,
     diff,
     comments,
     isEditing,
@@ -1144,13 +1265,14 @@ function useComments() {
       if (response.ok) {
         const result = await response.json();
         // Find the hunk index by ULID to create frontend hunk-{index} format
-        const hunkIndex = diff.value.hunks.findIndex(
-          (h) => h.id === result.comment.hunk_id,
-        );
+        const hunkIndex = ctx.hunkIndices.get(result.comment.hunk_id);
         // Replace optimistic update with server response
         const updatedComment = {
           ...result.comment,
-          hunkId: hunkIndex >= 0 ? `hunk-${hunkIndex}` : result.comment.hunk_id, // Convert to hunk-{index} for frontend
+          hunkId:
+            hunkIndex !== undefined
+              ? `hunk-${hunkIndex}`
+              : result.comment.hunk_id, // Convert to hunk-{index} for frontend
           timestamp: new Date(result.comment.timestamp),
           lineIndex:
             result.comment.line_index === -1
@@ -1232,7 +1354,7 @@ function useComments() {
       } else {
         // Clear search query if it matched the deleted comment
         if (shouldClearSearch) {
-          ctx.searchQuery.value = "";
+          ctx.setSearch("", true);
         }
       }
     } catch (error) {
@@ -1242,47 +1364,26 @@ function useComments() {
     }
   };
 
-  const getCommentsForHunk = (/** @type {string} */ hunkId) => {
-    return comments.value.filter(
-      (comment) =>
-        comment.hunkId === hunkId &&
-        !comment.parentId &&
-        comment.lineIndex === undefined,
-    );
-  };
+  const getCommentsForHunk = (/** @type {string} */ hunkId) =>
+    ctx.commentIndex.value.hunk.get(hunkId) || [];
 
   const getCommentsForLine = (
     /** @type {string} */ hunkId,
     /** @type {number} */ lineIndex,
-  ) => {
-    return comments.value.filter(
-      (comment) =>
-        comment.hunkId === hunkId &&
-        comment.lineIndex === lineIndex &&
-        !comment.parentId,
-    );
-  };
+  ) => ctx.commentIndex.value.line.get(`${hunkId}:${lineIndex}`) || [];
 
-  const getRepliesForComment = (/** @type {string} */ commentId) => {
-    return comments.value.filter((comment) => comment.parentId === commentId);
-  };
+  const getRepliesForComment = (/** @type {string} */ commentId) =>
+    ctx.commentIndex.value.replies.get(commentId) || [];
 
-  const getTotalCommentsCount = () => {
-    return comments.value.length;
-  };
+  const getTotalCommentsCount = () => comments.value.length;
 
-  const getTotalHunkCommentsCount = (/** @type {string} */ hunkId) => {
-    return comments.value.filter((comment) => comment.hunkId === hunkId).length;
-  };
+  const getTotalHunkCommentsCount = (/** @type {string} */ hunkId) =>
+    ctx.commentIndex.value.allByHunk.get(hunkId)?.length || 0;
 
   const getTotalLineCommentsCount = (
     /** @type {string} */ hunkId,
     /** @type {number} */ lineIndex,
-  ) => {
-    return comments.value.filter(
-      (comment) => comment.hunkId === hunkId && comment.lineIndex === lineIndex,
-    ).length;
-  };
+  ) => ctx.commentIndex.value.lineCounts.get(`${hunkId}:${lineIndex}`) || 0;
 
   return {
     comments: comments.value,
@@ -1517,7 +1618,7 @@ function CommentItem({ comment, depth = 0, onReply, onDelete }) {
 
   const handleTimestampClick = () => {
     if (appState) {
-      appState.searchQuery.value = comment.id;
+      appState.setSearch(comment.id, true);
     }
   };
 
@@ -1722,8 +1823,10 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
   const { getTotalHunkCommentsCount, addComment } = useComments();
   const [showCommentForm, setShowCommentForm] = useState(false);
   const [isLinkCopied, setIsLinkCopied] = useState(false);
-  const additions = hunk.lines.filter((line) => line.type === "ADD").length;
-  const deletions = hunk.lines.filter((line) => line.type === "DELETE").length;
+  const { additions, deletions } = appState?.hunkStats.get(hunk.id) || {
+    additions: 0,
+    deletions: 0,
+  };
   const commentCount = getTotalHunkCommentsCount(hunkId);
   const isCompleted = hunk.completed_at != null;
   const hunkIndex = 0;
@@ -2220,65 +2323,45 @@ function Line({ line, hunkId, lineIndex }) {
 function LazyHunk({ hunk, hunkIndex }) {
   const [isVisible, setIsVisible] = useState(false);
   const [hasBeenVisible, setHasBeenVisible] = useState(false);
-  const [measuredHeight, setMeasuredHeight] = useState(
-    /** @type {number | null} */ (null),
+  const [measurement, setMeasurement] = useState(
+    /** @type {{ height: number, width: number, collapsed: boolean } | null} */ (
+      null
+    ),
   );
   const ref = useRef(/** @type {HTMLDivElement | null} */ (null));
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
-
-  // Get collapsed state from AppState
   const appState = useContext(AppState);
   if (!appState) throw new Error("LazyHunk must be used within AppState");
   const isCollapsed = appState.collapsedHunks.value.has(hunkIndex);
+  const width = viewportWidth.value;
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry && entry.isIntersecting) {
-          setIsVisible(true);
-          setHasBeenVisible(true);
-        } else {
-          setIsVisible(false);
-        }
-      },
-      { rootMargin: "200px" }, // Load 200px before entering viewport
-    );
-
-    if (ref.current) {
-      observer.observe(ref.current);
-    }
-
-    return () => observer.disconnect();
+    if (!ref.current) return;
+    return observeHunk(ref.current, (visible) => {
+      setIsVisible(visible);
+      if (visible) setHasBeenVisible(true);
+    });
   }, []);
 
-  // Reset measured height when collapsed state changes
-  useEffect(() => {
-    setMeasuredHeight(null);
-  }, [isCollapsed]);
-
-  // Measure height when content is first rendered
-  useEffect(() => {
-    if (isVisible && contentRef.current && measuredHeight === null) {
-      const resizeObserver = new ResizeObserver((entries) => {
-        const entry = entries[0];
-        if (entry) {
-          setMeasuredHeight(entry.contentRect.height);
-        }
+  // Observe for the entire mounted lifetime, including edits, comments and resize.
+  useLayoutEffect(() => {
+    if (!isVisible || !contentRef.current) return;
+    return measureHunk(contentRef.current, (height) => {
+      setMeasurement({
+        height,
+        width: viewportWidth.peek(),
+        collapsed: isCollapsed,
       });
+    });
+  }, [isVisible, isCollapsed]);
 
-      resizeObserver.observe(contentRef.current);
-
-      return () => resizeObserver.disconnect();
-    }
-  }, [isVisible, measuredHeight]);
-
-  // Estimate height based on line count and collapsed state if not measured yet
+  const measuredHeight =
+    measurement?.width === width && measurement.collapsed === isCollapsed
+      ? measurement.height
+      : null;
   const estimatedHeight =
-    measuredHeight ||
-    (isCollapsed
-      ? 60 // Collapsed hunks are just the header (~60px)
-      : Math.max(120, hunk.lines.length * 24 + 80)); // Expanded hunks
+    measuredHeight ??
+    (isCollapsed ? 60 : Math.max(120, hunk.lines.length * 24 + 80));
 
   if (!hasBeenVisible) {
     return html`<div
@@ -2732,51 +2815,26 @@ function FileHeader() {
   if (!appState) throw new Error("FileHeader must be used within AppState");
   const [isFileLinkCopied, setIsFileLinkCopied] = useState(false);
 
-  // Calculate completion statistics
-  const completedCount = diff.value.hunks.filter(
-    (hunk) => hunk.completed_at != null,
-  ).length;
+  const completedCount = appState.completedCount.value;
   const totalCount = diff.value.hunks.length;
   const uncompletedCount = totalCount - completedCount;
   const isAllCompleted = totalCount > 0 && completedCount === totalCount;
-  const totalAdditions = diff.value.hunks.reduce(
-    (sum, hunk) =>
-      sum + hunk.lines.filter((line) => line.type === "ADD").length,
-    0,
-  );
-  const totalDeletions = diff.value.hunks.reduce(
-    (sum, hunk) =>
-      sum + hunk.lines.filter((line) => line.type === "DELETE").length,
-    0,
-  );
-
-  // Filter hunks for bulk operations based on current filter
-  const visibleHunks = diff.value.hunks.filter((hunk) => {
-    const isCompleted = hunk.completed_at != null;
-    switch (appState.currentFilter.value) {
-      case "completed":
-        return isCompleted;
-      case "uncompleted":
-        return !isCompleted;
-      case "all":
-      default:
-        return true;
-    }
-  });
+  const { totalAdditions, totalDeletions } = appState;
+  const visibleHunks = appState.completionHunks.value;
 
   // Calculate if all visible hunks are collapsed
   const allVisibleHunksCollapsed =
     visibleHunks.length > 0 &&
     visibleHunks.every((hunk) => {
-      const originalIndex = diff.value.hunks.findIndex((h) => h.id === hunk.id);
+      const originalIndex = appState.hunkIndices.get(hunk.id) ?? -1;
       return appState.collapsedHunks.value.has(originalIndex);
     });
 
   // Toggle all visible hunks expand/collapse
   const toggleAllHunks = () => {
     const newCollapsed = new Set(appState.collapsedHunks.value);
-    const visibleHunkIndices = visibleHunks.map((hunk) =>
-      diff.value.hunks.findIndex((h) => h.id === hunk.id),
+    const visibleHunkIndices = visibleHunks.map(
+      (hunk) => appState.hunkIndices.get(hunk.id) ?? -1,
     );
 
     if (allVisibleHunksCollapsed) {
@@ -2994,23 +3052,7 @@ function FileHeader() {
 
       <!-- search wrapper -->
       <div class="flex items-center gap-4">
-        <${SearchBar}
-          searchQuery=${appState.searchQuery.value}
-          onSearchChange=${(/** @type {string} */ query) => {
-            appState.searchQuery.value = query;
-          }}
-          resultCount=${diff.value.hunks.filter((hunk, index) =>
-            searchInHunk(
-              hunk,
-              appState.searchQuery.value,
-              appState.comments.value,
-              index,
-            ),
-          ).length}
-          totalHunks=${diff.value.hunks.length}
-          isSearching=${appState.searchQuery.value !==
-          appState.searchQuery.value}
-        />
+        <${DiffSearch} />
         <${HunkFilter}
           currentFilter=${appState.currentFilter.value}
           onFilterChange=${(/** @type {FilterType} */ filter) => {
@@ -3027,16 +3069,27 @@ function FileHeader() {
   `;
 }
 
+function DiffSearch() {
+  const appState = useContext(AppState);
+  if (!appState) throw new Error("DiffSearch must be used within AppState");
+  return html`<${SearchBar}
+    searchQuery=${appState.searchInput.value}
+    onSearchChange=${appState.setSearch}
+    resultCount=${appState.matchingHunks.value.length}
+    totalHunks=${appState.diff.value.hunks.length}
+    isSearching=${appState.searchInput.value !== appState.searchQuery.value}
+  />`;
+}
+
 /**
  * Search helper function to check if hunk matches search query
  * Searches in hunk ID, name, header, line content, line IDs, and comments
  * @param {Hunk} hunk - The hunk to search
  * @param {string} query - The search query
- * @param {Comment[]} comments - All comments for the diff
- * @param {number} hunkIndex - The hunk's index in the diff
+ * @param {Comment[]} comments - Comments for this hunk
  * @returns {boolean} - Whether the hunk matches the search
  */
-function searchInHunk(hunk, query, comments, hunkIndex) {
+function searchInHunk(hunk, query, comments) {
   if (!query.trim()) return true;
   const searchTerm = query.toLowerCase();
 
@@ -3062,11 +3115,8 @@ function searchInHunk(hunk, query, comments, hunkIndex) {
   }
 
   // Search in comments for this hunk
-  const hunkComments = comments.filter(
-    (comment) => comment.hunkId === `hunk-${hunkIndex}`,
-  );
   if (
-    hunkComments.some(
+    comments.some(
       (comment) =>
         comment.text.toLowerCase().includes(searchTerm) ||
         comment.author.toLowerCase().includes(searchTerm) ||
@@ -3115,35 +3165,8 @@ function App() {
     updateURLParameter("search", appState.searchQuery.value);
   }, [appState.searchQuery.value]);
 
-  // Filter hunks based on current filter and search
-  const filteredHunks = diff.value.hunks.filter((hunk, index) => {
-    const isCompleted = hunk.completed_at != null;
-
-    // Apply completion filter
-    let passesFilter = true;
-    switch (appState.currentFilter.value) {
-      case "completed":
-        passesFilter = isCompleted;
-        break;
-      case "uncompleted":
-        passesFilter = !isCompleted;
-        break;
-      case "all":
-      default:
-        passesFilter = true;
-        break;
-    }
-
-    // Apply search filter
-    const passesSearch = searchInHunk(
-      hunk,
-      appState.searchQuery.value,
-      appState.comments.value,
-      index,
-    );
-
-    return passesFilter && passesSearch;
-  });
+  useEffect(() => appState.cancelSearch, []);
+  const filteredHunks = appState.filteredHunks.value;
 
   return html`
     <!-- DiffViewer  -->
@@ -3183,9 +3206,7 @@ function App() {
                   /** @param {any} hunk */
                   (hunk) => {
                     // Find the original index for collapsed state management
-                    const originalIndex = diff.value.hunks.findIndex(
-                      (h) => h.id === hunk.id,
-                    );
+                    const originalIndex = appState.hunkIndices.get(hunk.id);
                     return html`
                       <${LazyHunk}
                         key=${hunk.id}

@@ -9,8 +9,7 @@ if __TRYKE_TESTING__:
 
     from fastapi.testclient import TestClient
 
-    from diffswarm.app.database import Database
-    from diffswarm.app.dependencies import get_transaction
+    from diffswarm.app.settings import Settings
 
     @contextmanager
     def _client() -> Generator[TestClient]:
@@ -21,12 +20,11 @@ if __TRYKE_TESTING__:
         with TemporaryDirectory() as directory:
             path = str(Path(directory) / "test.sqlite3")
 
-            def transaction() -> Generator[Database]:
-                with Database(path=path, check_same_thread=False).transaction() as txn:
-                    yield txn
-
             with (
-                patch.dict(APP.dependency_overrides, {get_transaction: transaction}),
+                patch(
+                    "diffswarm.app.database.get_settings",
+                    return_value=Settings.model_validate({"SAPLING_SQLITE_PATH": path}),
+                ),
                 TestClient(APP) as client,
             ):
                 yield client
