@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import Field
 from sapling.errors import NotFoundError
 from tryke_guard import __TRYKE_TESTING__
 
@@ -42,8 +43,14 @@ class UpdateDiffRequest(DiffSwarmBaseModel):
     description: str | None = None
 
 
+class DiffMetadata(DiffSwarmBaseModel):
+    id_: PrefixedULID = Field(alias="id")
+    name: str | None
+    description: str | None
+
+
 class UpdateDiffResponse(DiffSwarmBaseModel):
-    diff: Diff
+    diff: DiffMetadata
 
 
 class UpdateHunkRequest(DiffSwarmBaseModel):
@@ -51,8 +58,14 @@ class UpdateHunkRequest(DiffSwarmBaseModel):
     completed_at: datetime | None = None
 
 
+class HunkMetadata(DiffSwarmBaseModel):
+    id_: PrefixedULID = Field(alias="id")
+    name: str | None
+    completed_at: datetime | None
+
+
 class UpdateHunkResponse(DiffSwarmBaseModel):
-    hunk: Hunk
+    hunk: HunkMetadata
 
 
 class UpdateCommentRequest(DiffSwarmBaseModel):
@@ -145,7 +158,7 @@ def update_diff(
     diff_id: PrefixedULID, request: UpdateDiffRequest, txn: TransactionDependency
 ) -> UpdateDiffResponse:
     try:
-        diff = load_diff_with_relations(txn, diff_id)
+        diff = txn.fetch(Diff, diff_id).model
     except NotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Diff not found"
@@ -155,10 +168,9 @@ def update_diff(
         updates["name"] = request.name
     if "description" in request.model_fields_set:
         updates["description"] = request.description
-    updated_diff = diff.model_copy(update=updates)
+    updated_diff = diff.model_copy(update={**updates, "hunks": []})
     txn.put(Diff, diff_id, updated_diff)
-    diff = load_diff_with_relations(txn, diff_id)
-    return UpdateDiffResponse(diff=diff)
+    return UpdateDiffResponse(diff=DiffMetadata.model_validate(updated_diff))
 
 
 @ROUTER.put("/hunks/{hunk_id}")
@@ -171,19 +183,14 @@ def update_hunk(
             status_code=status.HTTP_404_NOT_FOUND, detail="Hunk not found"
         )
     hunk = hunk_doc.model
-    all_lines = txn.all(Line)
-    hunk.lines = [line.model for line in all_lines if line.model.hunk_id == hunk_id]
     updates: dict[str, str | datetime | None] = {}
     if request.name is not None:
         updates["name"] = request.name
     if "completed_at" in request.model_fields_set:
         updates["completed_at"] = request.completed_at
-    updated_hunk = hunk.model_copy(update=updates)
+    updated_hunk = hunk.model_copy(update={**updates, "lines": []})
     txn.put(Hunk, hunk_id, updated_hunk)
-    hunk_doc = txn.fetch(Hunk, hunk_id)
-    hunk = hunk_doc.model
-    hunk.lines = [line.model for line in all_lines if line.model.hunk_id == hunk_id]
-    return UpdateHunkResponse(hunk=hunk)
+    return UpdateHunkResponse(hunk=HunkMetadata.model_validate(updated_hunk))
 
 
 @ROUTER.delete("/diffs/{diff_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -210,12 +217,68 @@ def delete_diff(diff_id: PrefixedULID, txn: TransactionDependency) -> None:
 
 
 if __TRYKE_TESTING__:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from unittest.mock import patch
+
     from tryke import expect, test
 
     from diffswarm.app._testing import _client
+    from diffswarm.app.database import Database
     from diffswarm.app.models import DiffBase
 
     PREFIXED_ULID_LENGTH = 28  # prefix + hyphen + 26 character ULID
+
+    @test(name="concurrent metadata updates preserve fields without loading relations")
+    def test_concurrent_metadata_updates() -> None:
+        with _client() as client:
+            response = client.post(
+                "/",
+                content=DiffBase.HELLO_WORLD,
+                headers={"Content-Type": "text/plain"},
+            )
+            expect(response.status_code).to_equal(status.HTTP_201_CREATED)
+            diff_id = response.headers["X-Diff-ID"]
+            original = client.get(f"/api/diffs/{diff_id}").json()["diff"]
+            hunk_id = original["hunks"][0]["id"]
+            completed_at = "2026-09-29T12:00:00Z"
+            worker_count = 12
+            ready = Barrier(worker_count, timeout=10)
+
+            def update(index: int) -> None:
+                ready.wait()
+                updates = (
+                    {"name": "Renamed hunk"}
+                    if index % 2
+                    else {"completed_at": completed_at}
+                )
+                response = client.put(f"/api/hunks/{hunk_id}", json=updates)
+                expect(response.status_code).to_equal(status.HTTP_200_OK)
+                expect(set(response.json()["hunk"])).to_equal(
+                    {"id", "name", "completed_at"}
+                )
+
+            with (
+                patch.object(
+                    Database, "all", side_effect=AssertionError("Full table read")
+                ),
+                ThreadPoolExecutor(max_workers=worker_count) as executor,
+            ):
+                list(executor.map(update, range(worker_count), timeout=15))
+                response = client.put(
+                    f"/api/diffs/{diff_id}", json={"name": "Renamed diff"}
+                )
+                expect(response.status_code).to_equal(status.HTTP_200_OK)
+                expect(set(response.json()["diff"])).to_equal(
+                    {"id", "name", "description"}
+                )
+
+            saved = client.get(f"/api/diffs/{diff_id}").json()["diff"]
+            expect(saved["name"]).to_equal("Renamed diff")
+            expect(saved["hunks"][0]["name"]).to_equal("Renamed hunk")
+            expect(saved["hunks"][0]["completed_at"]).to_equal(completed_at)
+            expect(saved["hunks"][0]["lines"]).to_equal(original["hunks"][0]["lines"])
+            expect(client.get("/").status_code).to_equal(status.HTTP_200_OK)
 
     @test(name="get diff with invalid id")
     def test_get_diff_invalid_id() -> None:

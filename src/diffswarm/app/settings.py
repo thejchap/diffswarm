@@ -1,6 +1,7 @@
 from functools import cache
 from typing import ClassVar
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,9 @@ class Settings(BaseSettings):
     host: str = "localhost"
     forwarded_allow_ips: str | None = None
     git_hash: str = "dev"
+    database_path: str = Field(
+        default=".db/diffswarm.sqlite3", validation_alias="SAPLING_SQLITE_PATH"
+    )
 
 
 @cache

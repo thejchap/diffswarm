@@ -75,13 +75,13 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "python-ulid", extra = ["pydantic"] },
     { name = "sapling" },
+    { name = "tryke" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pre-commit" },
     { name = "ruff" },
-    { name = "tryke" },
     { name = "ty" },
 ]
 
@@ -94,13 +94,13 @@ requires-dist = [
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },
     { name = "python-ulid", extras = ["pydantic"], specifier = "==3.0" },
     { name = "sapling", git = "https://github.com/thejchap/sapling.git" },
+    { name = "tryke", specifier = "==0.0.18" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "ruff", specifier = ">=0.12.5" },
-    { name = "tryke", git = "https://github.com/thejchap/tryke" },
     { name = "ty", specifier = ">=0.0.4" },
 ]
 
@@ -736,7 +736,12 @@ wheels = [
 [[package]]
 name = "tryke"
 version = "0.0.18"
-source = { git = "https://github.com/thejchap/tryke#6be2d240c958d5701818f67763e31dd6d1cab15a" }
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/39/6a926a295e4078074f769087d8ea09562b0959490985ac54fc6a0dc8cba7/tryke-0.0.18-py3-none-macosx_11_0_arm64.whl", hash = "sha256:6678b8b2c70f32d79342507e04c4a4e8a389159246a52cc6d6a8faa5cfa40925", size = 4276083, upload-time = "2026-04-19T04:26:05.925Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/ec/51c9e5e62c5edf0d4c018622a924cab7fd3fec6b0a8066e9dd831c1dc25a/tryke-0.0.18-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f6a62b7c116152c01ad73352363b7b7546e905f885d338c1b2bd960161db59cd", size = 4614408, upload-time = "2026-04-19T04:26:04.085Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/b5/dc1cb032ba9e04e8edf8df1223510a1435508fb7090bc34dc61f6a6c88e2/tryke-0.0.18-py3-none-win_amd64.whl", hash = "sha256:d951b8ca61a31f92340ca2fbe5460f5cc077b5bf05521128cf8c35d3dac32b4c", size = 3984728, upload-time = "2026-04-19T04:26:07.645Z" },
+]
 
 [[package]]
 name = "ty"

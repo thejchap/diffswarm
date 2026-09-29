@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --locked --no-install-project --no-dev
 ADD . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --locked
+  uv sync --locked --no-dev
 ARG GIT_HASH=dev
 ENV GIT_HASH=${GIT_HASH}
 CMD ["/app/.venv/bin/diffswarm-server"]

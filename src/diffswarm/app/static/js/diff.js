@@ -1769,7 +1769,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
         diff.value = {
           ...diff.value,
           hunks: diff.value.hunks.map((/** @type {any} */ h) =>
-            h.id === hunk.id ? updatedHunk.hunk : h,
+            h.id === hunk.id ? { ...h, ...updatedHunk.hunk } : h,
           ),
         };
       } else {
@@ -1814,7 +1814,7 @@ function HunkHeader({ hunk, hunkId, isCollapsed, onToggleCollapse }) {
         diff.value = {
           ...diff.value,
           hunks: diff.value.hunks.map((/** @type {Hunk} */ h) =>
-            h.id === hunkId ? updatedHunk.hunk : h,
+            h.id === hunkId ? { ...h, ...updatedHunk.hunk } : h,
           ),
         };
       } else {
@@ -2449,7 +2449,7 @@ function DiffDescription() {
 
       if (response.ok) {
         const updatedDiff = await response.json();
-        diff.value = updatedDiff.diff;
+        diff.value = { ...diff.value, ...updatedDiff.diff };
       } else {
         // Rollback on failure
         diff.value = originalDiff;
@@ -2622,7 +2622,7 @@ function FileRename() {
 
       if (response.ok) {
         const updatedDiff = await response.json();
-        diff.value = updatedDiff.diff;
+        diff.value = { ...diff.value, ...updatedDiff.diff };
       } else {
         // Rollback on failure
         diff.value = originalDiff;

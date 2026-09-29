@@ -1,11 +1,16 @@
 from tryke_guard import __TRYKE_TESTING__
 
 if __TRYKE_TESTING__:
-    import os
     from collections.abc import Generator
     from contextlib import contextmanager
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
 
     from fastapi.testclient import TestClient
+
+    from diffswarm.app.database import Database
+    from diffswarm.app.dependencies import get_transaction
 
     @contextmanager
     def _client() -> Generator[TestClient]:
@@ -13,6 +18,15 @@ if __TRYKE_TESTING__:
         # at module-load time during tryke's test discovery.
         from diffswarm.app.app import APP  # noqa: PLC0415
 
-        os.environ["SAPLING_SQLITE_PATH"] = ":memory:"
-        with TestClient(APP) as client:
-            yield client
+        with TemporaryDirectory() as directory:
+            path = str(Path(directory) / "test.sqlite3")
+
+            def transaction() -> Generator[Database]:
+                with Database(path=path, check_same_thread=False).transaction() as txn:
+                    yield txn
+
+            with (
+                patch.dict(APP.dependency_overrides, {get_transaction: transaction}),
+                TestClient(APP) as client,
+            ):
+                yield client
